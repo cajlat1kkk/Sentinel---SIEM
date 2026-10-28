@@ -1,0 +1,24 @@
+pkgname=sentinel-siem
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Native C++ SIEM console with PostgreSQL, antivirus and DPDK network inspection'
+arch=('x86_64')
+url='https://localhost/sentinel-siem'
+license=('custom')
+depends=('qt6-base' 'qt6-svg' 'postgresql-libs' 'dpdk')
+makedepends=('cmake' 'ninja' 'pkgconf')
+optdepends=('clamav: full malware signature scanning' 'nftables: Linux firewall' 'polkit: firewall elevation' 'postgresql: local database server')
+source=("sentinel-siem-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+build() {
+  cmake -S "$srcdir/sentinel-siem-$pkgver" -B "$srcdir/build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build "$srcdir/build" -j "$(nproc)"
+}
+check() {
+  QT_QPA_PLATFORM=offscreen ctest --test-dir "$srcdir/build" --output-on-failure
+}
+package() {
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build"
+  install -Dm644 "$srcdir/sentinel-siem-$pkgver/README.md" "$pkgdir/usr/share/doc/sentinel-siem/README.md"
+}

@@ -1,0 +1,10 @@
+build*
+dist
+.git
+.dev
+.env
+node_modules
+frontend
+backend
+desktop
+*.log

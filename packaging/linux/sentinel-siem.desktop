@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Sentinel SIEM
+Comment=Security operations and network protection console
+Comment[ru]=Центр мониторинга безопасности
+Exec=sentinel-siem
+Icon=sentinel
+Terminal=false
+Categories=System;Security;Network;
+StartupWMClass=sentinel-siem

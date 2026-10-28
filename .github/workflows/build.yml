@@ -1,0 +1,34 @@
+name: Native desktop packages
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Debian package and test
+        run: bash scripts/package-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-linux-deb
+          path: dist/deb/*.deb
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+      - name: Build and package
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
+          ./packaging/windows/build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-windows-installer
+          path: build-windows/*.exe

@@ -1,0 +1,7 @@
+{"source":"SSH","host":"gateway-01","ip":"10.0.0.1","category":"auth","severity":"medium","message":"Failed password for invalid user admin"}
+{"source":"SSH","host":"gateway-01","ip":"10.0.0.1","category":"auth","severity":"medium","message":"Failed password for invalid user admin"}
+{"source":"SSH","host":"gateway-01","ip":"10.0.0.1","category":"auth","severity":"medium","message":"Failed password for invalid user admin"}
+{"source":"SSH","host":"gateway-01","ip":"10.0.0.1","category":"auth","severity":"medium","message":"Failed password for invalid user admin"}
+{"source":"SSH","host":"gateway-01","ip":"10.0.0.1","category":"auth","severity":"medium","message":"Failed password for invalid user admin"}
+{"event_type":"alert","src_ip":"10.0.0.23","dest_ip":"192.168.1.10","alert":{"signature":"LAB HTTP SQL injection attempt","severity":2}}
+{"source":"Host","host":"workstation-17","ip":"192.168.1.17","category":"inventory","severity":"info","message":"Host inventory received"}
