@@ -51,7 +51,9 @@ if(WIN32)
   qt_generate_deploy_app_script(TARGET sentinel-siem OUTPUT_SCRIPT deploy_script NO_UNSUPPORTED_PLATFORM_ERROR)
   install(SCRIPT ${deploy_script})
   if(SIEM_PG_RUNTIME_DIR)
-    install(DIRECTORY "${SIEM_PG_RUNTIME_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}
+    # Native Windows paths must not introduce escape sequences in cmake_install.cmake.
+    string(REPLACE "\\" "/" siem_pg_runtime_dir "${SIEM_PG_RUNTIME_DIR}")
+    install(DIRECTORY "${siem_pg_runtime_dir}/" DESTINATION ${CMAKE_INSTALL_BINDIR}
       FILES_MATCHING PATTERN "*.dll")
   endif()
 endif()
