@@ -69,6 +69,13 @@ void Store::initialize() {
          "TEXT,signature TEXT,time TEXT,state TEXT DEFAULT 'isolated')");
     exec("CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,time TEXT,action TEXT,detail TEXT)");
     exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT)");
+    exec("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied TEXT NOT NULL)");
+    atomic([&] {
+        exec("CREATE TABLE IF NOT EXISTS deliveries(id TEXT PRIMARY KEY, received TEXT NOT NULL)");
+        exec("CREATE INDEX IF NOT EXISTS event_received ON events(received)");
+        exec("INSERT INTO schema_migrations(version,applied) VALUES(1,?) ON CONFLICT(version) DO NOTHING",
+             {QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)});
+    });
     if (!scalar("SELECT value FROM meta WHERE key='initialized'").isValid()) {
         exec("INSERT INTO rules(name,pattern,threshold,window_seconds,severity) VALUES(?,?,?,?,?)",
              {"Подбор пароля", "failed password", 5, 300, "high"});
@@ -123,7 +130,36 @@ qint64 Store::exec(const QString &sql, const QVariantList &args) {
         return q.next() ? q.value(0).toLongLong() : 0;
     return q.lastInsertId().toLongLong();
 }
-qint64 Store::ingest(const Event &e) {
+void Store::atomic(const std::function<void()> &operation) {
+    if (!db_.transaction())
+        throw std::runtime_error(db_.lastError().text().toStdString());
+    try {
+        operation();
+        if (!db_.commit())
+            throw std::runtime_error(db_.lastError().text().toStdString());
+    } catch (...) {
+        db_.rollback();
+        throw;
+    }
+}
+int Store::retainEvents(int days, int batchSize) {
+    if (days < 1 || batchSize < 1 || batchSize > 10000)
+        throw std::runtime_error("Invalid retention bounds");
+    const auto cutoff = QDateTime::currentDateTimeUtc().addDays(-days).toString(Qt::ISODateWithMs);
+    int removed = 0;
+    atomic([&] {
+        const auto candidates = rows("SELECT id FROM events WHERE received<? AND id NOT IN "
+                                     "(SELECT event_id FROM incidents WHERE event_id IS NOT NULL) "
+                                     "ORDER BY id LIMIT ?", {cutoff, batchSize});
+        for (const auto &r : candidates) {
+            exec("DELETE FROM matches WHERE event_id=?", {r["id"]});
+            exec("DELETE FROM events WHERE id=?", {r["id"]});
+        }
+        removed = int(candidates.size());
+    });
+    return removed;
+}
+qint64 Store::ingest(const Event &e, const QString &deliveryId) {
     const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
     const QString stamp =
         (e.time.isValid() ? e.time : QDateTime::currentDateTimeUtc()).toUTC().toString(Qt::ISODateWithMs);
@@ -131,6 +167,12 @@ qint64 Store::ingest(const Event &e) {
         throw std::runtime_error(db_.lastError().text().toStdString());
     qint64 id = 0;
     try {
+        if (!deliveryId.isEmpty() &&
+            rows("INSERT INTO deliveries(id,received) VALUES(?,?) ON CONFLICT(id) DO NOTHING RETURNING id",
+                 {deliveryId, now}).isEmpty()) {
+            db_.rollback();
+            return 0;
+        }
         id = exec("INSERT INTO events(time,received,source,host,category,severity,message,ip,raw) "
                   "VALUES(?,?,?,?,?,?,?,?,?)",
                   {stamp, now, e.source.left(128), e.host.left(256), e.category.left(64), e.severity,

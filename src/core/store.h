@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QSqlDatabase>
 #include <QVariantMap>
+#include <functional>
 
 namespace siem {
 struct DatabaseConfig {
@@ -24,7 +25,9 @@ class Store : public QObject {
     QList<QVariantMap> rows(const QString &sql, const QVariantList &args = {}) const;
     QVariant scalar(const QString &sql, const QVariantList &args = {}) const;
     qint64 exec(const QString &sql, const QVariantList &args = {});
-    qint64 ingest(const Event &event);
+    qint64 ingest(const Event &event, const QString &deliveryId = {});
+    void atomic(const std::function<void()> &operation);
+    int retainEvents(int days, int batchSize = 1000);
     void recordPolicyApplication(const QString &keyPrefix, const QJsonObject &policy, const QString &detail);
     bool compareAndSetMeta(const QString &key, const QString &expected, const QString &value);
     void audit(const QString &action, const QString &detail);

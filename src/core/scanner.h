@@ -19,13 +19,14 @@ class Scanner : public QObject {
   public:
     explicit Scanner(QObject *parent = nullptr);
     ~Scanner() override;
-    bool start(const QString &path, const QMap<QString, QString> &hashes = {}, bool useClam = true);
+    bool start(const QString &path, const QMap<QString, QString> &hashes = {}, bool useClam = true,
+               const QStringList &exclusions = {});
     void cancel();
     bool busy() const {
         return watcher_.isRunning();
     }
     static ScanResult scan(const QString &path, const QMap<QString, QString> &hashes,
-                           std::atomic_bool &cancel, bool useClam);
+                           std::atomic_bool &cancel, bool useClam, const QStringList &exclusions = {});
     static QString hashFile(const QString &path);
     static qint64 quarantine(Store &store, const Finding &finding, const QString &directory, QString *error);
     static bool restore(Store &store, qint64 id, const QString &destination, QString *error);

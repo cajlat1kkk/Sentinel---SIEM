@@ -17,12 +17,12 @@ Scanner::~Scanner() {
     cancel();
     watcher_.waitForFinished();
 }
-bool Scanner::start(const QString &path, const QMap<QString, QString> &hashes, bool clam) {
+bool Scanner::start(const QString &path, const QMap<QString, QString> &hashes, bool clam, const QStringList &exclusions) {
     if (busy())
         return false;
     cancel_ = false;
     watcher_.setFuture(
-        QtConcurrent::run([this, path, hashes, clam] { return scan(path, hashes, cancel_, clam); }));
+        QtConcurrent::run([this, path, hashes, clam, exclusions] { return scan(path, hashes, cancel_, clam, exclusions); }));
     return true;
 }
 void Scanner::cancel() {
@@ -38,7 +38,7 @@ QString Scanner::hashFile(const QString &path) {
     return QString::fromLatin1(h.result().toHex());
 }
 ScanResult Scanner::scan(const QString &path, const QMap<QString, QString> &hashes, std::atomic_bool &cancel,
-                         bool useClam) {
+                         bool useClam, const QStringList &exclusions) {
     ScanResult r;
     QSet<QString> detected;
     const QByteArray eicar = QByteArray::fromBase64(
@@ -47,6 +47,13 @@ ScanResult Scanner::scan(const QString &path, const QMap<QString, QString> &hash
         if (cancel)
             return;
         QFileInfo info(p);
+        for (const auto &excluded : exclusions) {
+            const auto prefix = QDir::cleanPath(QFileInfo(excluded).absoluteFilePath());
+            if (info.absoluteFilePath() == prefix || info.absoluteFilePath().startsWith(prefix + '/')) {
+                ++r.skipped;
+                return;
+            }
+        }
         if (info.isSymLink() || !info.isFile() || info.size() > 256LL * 1024 * 1024) {
             ++r.skipped;
             return;
@@ -111,9 +118,14 @@ ScanResult Scanner::scan(const QString &path, const QMap<QString, QString> &hash
     if (useClam && !clam.isEmpty() && !cancel) {
         QProcess p;
         p.setProcessChannelMode(QProcess::MergedChannels);
-        p.start(clam,
-                {"--recursive", "--infected", "--stdout", "--max-filesize=256M", "--alert-exceeds-max=yes",
-                 "--follow-dir-symlinks=0", "--follow-file-symlinks=0", "--", root.absoluteFilePath()});
+        QStringList arguments{"--recursive", "--infected", "--stdout", "--max-filesize=256M", "--alert-exceeds-max=yes",
+                              "--follow-dir-symlinks=0", "--follow-file-symlinks=0"};
+        for (const auto &excluded : exclusions) {
+            auto expression = "^" + QRegularExpression::escape(QDir::cleanPath(QFileInfo(excluded).absoluteFilePath())) + "(/|$)";
+            arguments << "--exclude=" + expression << "--exclude-dir=" + expression;
+        }
+        arguments << "--" << root.absoluteFilePath();
+        p.start(clam, arguments);
         if (!p.waitForStarted(5000))
             r.errors << "ClamAV: " + p.errorString();
         else {
