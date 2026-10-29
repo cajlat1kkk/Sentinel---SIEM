@@ -7,6 +7,7 @@ class GaugeWidget : public QWidget {
     explicit GaugeWidget(QWidget *parent = nullptr);
     void setValues(qint64 total, qint64 high);
     void setTheme(bool lavender);
+    void setNightMode(bool night);
 
   protected:
     void paintEvent(QPaintEvent *) override;
@@ -14,6 +15,7 @@ class GaugeWidget : public QWidget {
   private:
     qint64 total_ = 0, high_ = 0;
     bool lavender_ = false;
+    bool night_ = false;
 };
 
 class NetworkMapWidget : public QWidget {
@@ -21,6 +23,7 @@ class NetworkMapWidget : public QWidget {
     explicit NetworkMapWidget(QWidget *parent = nullptr);
     void setNodeCount(int count);
     void setTheme(bool lavender);
+    void setNightMode(bool night);
 
   protected:
     void paintEvent(QPaintEvent *) override;
@@ -28,5 +31,6 @@ class NetworkMapWidget : public QWidget {
   private:
     int count_ = 0;
     bool lavender_ = false;
+    bool night_ = false;
 };
 } // namespace siem

@@ -1,1 +1,13 @@
-<RCC><qresource prefix="/"><file>style.qss</file><file>sentinel.svg</file></qresource></RCC>
+<RCC>
+  <qresource prefix="/">
+    <file>style.qss</file>
+    <file>night.qss</file>
+    <file>sentinel.svg</file>
+    <file>theme-check.svg</file>
+    <file>theme-check-night.svg</file>
+    <file>theme-chevron-down.svg</file>
+    <file>theme-chevron-up.svg</file>
+    <file>theme-chevron-down-night.svg</file>
+    <file>theme-chevron-up-night.svg</file>
+  </qresource>
+</RCC>

@@ -44,6 +44,8 @@ Store::Store(const DatabaseConfig &c, QObject *parent)
         throw std::runtime_error(error.toStdString());
     }
     exec("SET TIME ZONE 'UTC'");
+    exec("SET statement_timeout = 5000");
+    exec("SET lock_timeout = 2000");
     initialize();
 }
 void Store::initialize() {
@@ -53,7 +55,9 @@ void Store::initialize() {
     exec("CREATE TABLE IF NOT EXISTS incidents(id INTEGER PRIMARY KEY,event_id INTEGER REFERENCES "
          "events(id),time TEXT,title TEXT,host TEXT,severity TEXT,status TEXT DEFAULT 'open',rule_id "
          "INTEGER,note TEXT DEFAULT '')");
+    exec("CREATE INDEX IF NOT EXISTS incident_status_time ON incidents(status,time)");
     exec("CREATE TABLE IF NOT EXISTS assets(host TEXT PRIMARY KEY,ip TEXT,last_seen TEXT,source TEXT)");
+    exec("CREATE INDEX IF NOT EXISTS asset_last_seen ON assets(last_seen)");
     exec("CREATE TABLE IF NOT EXISTS rules(id INTEGER PRIMARY KEY,name TEXT,pattern TEXT,threshold "
          "INTEGER,window_seconds INTEGER,severity TEXT,enabled INTEGER DEFAULT 1)");
     exec("CREATE TABLE IF NOT EXISTS matches(rule_id INTEGER,event_id INTEGER REFERENCES events(id),host "
@@ -176,6 +180,45 @@ qint64 Store::ingest(const Event &e) {
     emit changed();
     return id;
 }
+void Store::recordPolicyApplication(const QString &prefix, const QJsonObject &policy, const QString &detail) {
+    if (!db_.transaction())
+        throw std::runtime_error(db_.lastError().text().toStdString());
+    try {
+        const auto previous = scalar("SELECT value FROM meta WHERE key=?", {prefix + ".applied"}).toString();
+        auto put = [&](const QString &suffix, const QString &value) {
+            exec(
+                "INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                {prefix + suffix, value});
+        };
+        if (!previous.isEmpty())
+            put(".previous", previous);
+        put(".applied", QString::fromUtf8(QJsonDocument(policy).toJson(QJsonDocument::Compact)));
+        put(".applied_at", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        exec("INSERT INTO audit(time,action,detail) VALUES(?,?,?)",
+             {QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs), "ngfw.applied", detail});
+        if (!db_.commit())
+            throw std::runtime_error(db_.lastError().text().toStdString());
+    } catch (...) {
+        db_.rollback();
+        throw;
+    }
+    emit changed();
+}
+bool Store::compareAndSetMeta(const QString &key, const QString &expected, const QString &value) {
+    QSqlQuery query(db_);
+    if (expected.isEmpty()) {
+        check(query.prepare("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING"), query);
+        query.addBindValue(key);
+        query.addBindValue(value);
+    } else {
+        check(query.prepare("UPDATE meta SET value=? WHERE key=? AND value=?"), query);
+        query.addBindValue(value);
+        query.addBindValue(key);
+        query.addBindValue(expected);
+    }
+    check(query.exec(), query);
+    return query.numRowsAffected() == 1;
+}
 void Store::audit(const QString &action, const QString &detail) {
     exec("INSERT INTO audit(time,action,detail) VALUES(?,?,?)",
          {QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs), action, detail});
@@ -223,7 +266,7 @@ void Store::seedDemo() {
 QString Store::exportJson() const {
     QJsonObject root;
     root["generated_at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-    root["schema_version"] = 1;
+    root["schema_version"] = 2;
     for (auto name : {"events", "incidents", "assets", "rules", "firewall", "audit"}) {
         QJsonArray a;
         for (const auto &r : rows(QString("SELECT * FROM %1 ORDER BY %2 DESC LIMIT 100000")
@@ -231,6 +274,13 @@ QString Store::exportJson() const {
             a.append(QJsonObject::fromVariantMap(r));
         root[name] = a;
     }
+    QJsonObject policies;
+    for (const auto &r : rows("SELECT key,value FROM meta WHERE key LIKE 'ngfw.%'")) {
+        const auto json = QJsonDocument::fromJson(r["value"].toString().toUtf8());
+        policies[r["key"].toString()] =
+            json.isObject() ? QJsonValue(json.object()) : QJsonValue(r["value"].toString());
+    }
+    root["ngfw_profiles"] = policies;
     root["row_limit_per_table"] = 100000;
     return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Indented));
 }

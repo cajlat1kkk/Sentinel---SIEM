@@ -1,3 +1,4 @@
+#include "ui/theme.h"
 #include "ui/window.h"
 #include <QApplication>
 #include <QCommandLineParser>
@@ -34,25 +35,11 @@ int main(int argc, char **argv) {
     QCoreApplication::setOrganizationName("Sentinel");
     QCoreApplication::setApplicationVersion("0.2.0");
     app.setStyle("Fusion");
-    QPalette palette;
-    palette.setColor(QPalette::Window, QColor("#f4f2f6"));
-    palette.setColor(QPalette::WindowText, QColor("#17213f"));
-    palette.setColor(QPalette::Base, Qt::white);
-    palette.setColor(QPalette::AlternateBase, QColor("#fafbfe"));
-    palette.setColor(QPalette::Text, QColor("#17213f"));
-    palette.setColor(QPalette::Button, Qt::white);
-    palette.setColor(QPalette::ButtonText, QColor("#17213f"));
-    palette.setColor(QPalette::Highlight, QColor("#ede7ff"));
-    palette.setColor(QPalette::HighlightedText, QColor("#453184"));
-    app.setPalette(palette);
     QFont font(QFontDatabase::families().contains("Google Sans") ? "Google Sans"
                : QFontDatabase::families().contains("Open Sans") ? "Open Sans"
                                                                  : "Segoe UI");
     font.setPixelSize(13);
     app.setFont(font);
-    QFile css(":/style.qss");
-    if (css.open(QIODevice::ReadOnly))
-        app.setStyleSheet(QString::fromUtf8(css.readAll()));
     QCommandLineParser parser;
     parser.setApplicationDescription("Sentinel SIEM — нативная C++ консоль центра безопасности");
     parser.addHelpOption();
@@ -61,13 +48,26 @@ int main(int argc, char **argv) {
     parser.addOption({"connect-env", "Подключиться к PostgreSQL из SIEM_DB_* без диалога"});
     parser.addOption({"smoke-test", "Проверить все страницы и завершить"});
     parser.addOption({"screenshot", "Сохранить снимок окна и завершить", "file"});
-    parser.addOption({"theme", "Палитра интерфейса: ember или flow", "name"});
+    parser.addOption({"theme", "Палитра интерфейса: ember, flow или night", "name"});
+    parser.addOption({"page",
+                      "Открыть раздел: overview, alerts, incidents, events, assets, ngfw, antivirus, "
+                      "network, reports, settings",
+                      "name", "overview"});
     parser.process(app);
+    const QStringList pageNames{"overview", "alerts",    "incidents", "events",  "assets",
+                                "ngfw",     "antivirus", "network",   "reports", "settings"};
+    const int initialPage = pageNames.indexOf(parser.value("page"));
+    if (initialPage < 0)
+        parser.showHelp(2);
     if (parser.isSet("theme")) {
-        if (!QStringList{"ember", "flow"}.contains(parser.value("theme")))
+        if (!QStringList{"ember", "flow", "night"}.contains(parser.value("theme")))
             parser.showHelp(2);
         qApp->setProperty("themeOverride", parser.value("theme"));
     }
+    const auto theme =
+        parser.isSet("theme") ? parser.value("theme") : QSettings().value("ui/theme", "ember").toString();
+    app.setPalette(siem::applicationPalette(theme));
+    app.setStyleSheet(siem::applicationStyle(theme));
     const bool demo = parser.isSet("demo");
     QTemporaryDir demoDir;
     std::unique_ptr<siem::Store> store;
@@ -101,8 +101,8 @@ int main(int argc, char **argv) {
                 auto *title = new QLabel("Подключение к PostgreSQL");
                 title->setObjectName("title");
                 form->addRow(title);
-                auto *help = new QLabel("Рабочие события и настройки SIEM хранятся в вашей базе.\nСоздайте "
-                                        "БД с помощью packaging/compose.yaml.");
+                auto *help = new QLabel("Укажите адрес сервера и данные учётной записи PostgreSQL.\nСобытия "
+                                        "и настройки будут храниться в выбранной базе.");
                 help->setObjectName("muted");
                 help->setWordWrap(true);
                 form->addRow(help);
@@ -158,9 +158,10 @@ int main(int argc, char **argv) {
         }
         siem::Window window(*store, demo);
         window.show();
+        window.navigate(initialPage);
         if (parser.isSet("smoke-test") || parser.isSet("screenshot"))
             QTimer::singleShot(400, &window, [&] {
-                bool ok = window.smokeTest(parser.value("screenshot"));
+                bool ok = window.smokeTest(parser.value("screenshot"), initialPage);
                 app.exit(ok ? 0 : 3);
             });
         return app.exec();

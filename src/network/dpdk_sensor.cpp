@@ -60,20 +60,32 @@ int main(int argc, char **argv) {
         return failure(
             "Usage: siem-dpdk [--pcap file] [--inline --policy rules.json] [--seconds N] -- EAL arguments");
     }
-    QJsonArray rules;
+    auto configuration = siem::defaultFirewallPolicy();
+    configuration["stateful"] = false;
+    auto legacyInspection = configuration["inspection"].toObject();
+    legacyInspection["mode"] = "block";
+    for (const auto &flag : {"sql_injection", "xss", "path_traversal"})
+        legacyInspection[flag] = true;
+    configuration["inspection"] = legacyInspection;
     if (!policy.isEmpty()) {
         QFile f(policy);
-        if (!f.open(QIODevice::ReadOnly) || f.size() > 1024 * 1024)
-            return failure("Cannot read policy");
-        auto d = QJsonDocument::fromJson(f.readAll());
-        if (!d.isArray())
+        if (!f.open(QIODevice::ReadOnly) || f.size() > 2 * 1024 * 1024)
+            return failure("Cannot read policy (max 2 MiB)");
+        QJsonParseError parse;
+        const auto document = QJsonDocument::fromJson(f.readAll(), &parse);
+        if (parse.error != QJsonParseError::NoError || (!document.isArray() && !document.isObject()))
             return failure("Invalid policy JSON");
-        rules = d.array();
         QString error;
-        siem::compileNft(rules, &error);
+        configuration = siem::normalizeFirewallPolicy(
+            document.isArray() ? QJsonValue(document.array()) : QJsonValue(document.object()), &error);
+        if (document.isArray())
+            configuration["inspection"] = legacyInspection;
+        if (error.isEmpty())
+            error = siem::validateDpdkPolicy(configuration);
         if (!error.isEmpty())
             return failure(error);
     }
+    const auto inspection = configuration["inspection"].toObject();
     if (!pcap.isEmpty()) {
         if (bridge || pcap.contains(',') || !QFile::exists(pcap))
             return failure("PCAP must exist, must not contain commas; inline needs two live ports");
@@ -172,15 +184,19 @@ int main(int argc, char **argv) {
                 int length = int(rte_pktmbuf_pkt_len(m));
                 QByteArray copy(length, Qt::Uninitialized);
                 const auto *data = rte_pktmbuf_read(m, 0, unsigned(length), copy.data());
-                auto packet = data ? siem::inspectPacket(QByteArray(static_cast<const char *>(data), length))
+                auto packet = data ? siem::inspectPacket(QByteArray(static_cast<const char *>(data), length),
+                                                         inspection)
                                    : siem::Packet{};
-                bool blocked = bridge && siem::packetBlocked(packet, rules, true);
+                QString reason;
+                bool blocked = bridge && siem::packetBlocked(packet, configuration, &reason);
                 if (!packet.signature.isEmpty())
                     ++alerts;
                 if (packet.valid) {
                     if (emitted < 500) {
                         auto ev = siem::packetEvent(packet);
                         ev["blocked"] = blocked;
+                        if (!reason.isEmpty())
+                            ev["policy_reason"] = reason;
                         output(ev);
                         ++emitted;
                     } else

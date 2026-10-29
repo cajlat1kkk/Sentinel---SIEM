@@ -1,10 +1,13 @@
 #include "window.h"
 #include "chart.h"
 #include "core/firewall.h"
+#include "ngfw_page.h"
+#include "theme.h"
 #include "visuals.h"
 #include <QApplication>
 #include <QBoxLayout>
 #include <QButtonGroup>
+#include <QCloseEvent>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -26,6 +29,7 @@
 #include <QScrollArea>
 #include <QShortcut>
 #include <QStandardPaths>
+#include <QStyle>
 #include <QTabWidget>
 #include <QTextDocument>
 #include <QtConcurrent>
@@ -190,6 +194,7 @@ QString localTime(const QVariant &v) {
 void populate(QTableWidget *t, const QList<QVariantMap> &rows, const QStringList &keys) {
     const auto selected = t->currentRow() >= 0 ? t->item(t->currentRow(), 0)->data(Qt::UserRole) : QVariant();
     QSignalBlocker block(t);
+    t->setUpdatesEnabled(false);
     t->setRowCount(int(rows.size()));
     int restore = -1;
     for (int row = 0; row < rows.size(); ++row) {
@@ -216,9 +221,12 @@ void populate(QTableWidget *t, const QList<QVariantMap> &rows, const QStringList
                                                            : "#8490aa"));
             }
             if (k == "status")
-                item->setForeground(QColor(r[k] == "resolved" ? "#17a77e"
-                                           : r[k] == "open"   ? "#da8e25"
-                                                              : "#7658ed"));
+                item->setForeground(
+                    QColor(r[k] == "resolved" ? "#17a77e"
+                           : r[k] == "open"
+                               ? "#da8e25"
+                               : (qApp->palette().color(QPalette::Window).lightness() < 100 ? "#b89af4"
+                                                                                            : "#7658ed")));
             t->setItem(row, col, item);
         }
         if (r.value("id", r.value("host")) == selected)
@@ -226,6 +234,7 @@ void populate(QTableWidget *t, const QList<QVariantMap> &rows, const QStringList
     }
     if (restore >= 0)
         t->selectRow(restore);
+    t->setUpdatesEnabled(true);
 }
 QWidget *badge(const QString &text, const QString &tone = "green") {
     auto *l = label(text);
@@ -302,15 +311,19 @@ Window::Window(Store &s, bool demo)
     tl->addStretch();
     auto *theme = button("◐", "roundButton");
     theme->setFixedSize(38, 38);
-    theme->setToolTip("Сменить палитру: Ember / Flow");
-    connect(theme, &QPushButton::clicked, this, [this] { applyTheme(!lavender_); });
+    theme->setToolTip("Включить / выключить ночную тему");
+    theme->setAccessibleName("Ночная тема");
+    connect(theme, &QPushButton::clicked, this,
+            [this] { applyTheme(themeName_ == "night" ? lastLightTheme_ : "night"); });
     tl->addWidget(theme);
     auto *alert = button("", "roundButton");
+    alert->setProperty("iconIndex", 1);
     alert->setIcon(icon(1, QColor("#4c4a51")));
     alert->setFixedSize(38, 38);
     alert->setToolTip("Оповещения");
     tl->addWidget(alert);
     auto *settingsButton = button("", "roundButton");
+    settingsButton->setProperty("iconIndex", 9);
     settingsButton->setIcon(icon(9, QColor("#4c4a51")));
     settingsButton->setFixedSize(38, 38);
     settingsButton->setToolTip("Настройки");
@@ -331,6 +344,12 @@ Window::Window(Store &s, bool demo)
     auto *sl = new QVBoxLayout(side);
     sl->setContentsMargins(5, 25, 5, 4);
     sl->setSpacing(9);
+    auto *expandNav = button("☰", "roundButton");
+    expandNav->setFixedSize(40, 40);
+    expandNav->setCheckable(true);
+    expandNav->setToolTip("Показать названия разделов");
+    expandNav->setAccessibleName("Развернуть навигацию");
+    sl->addWidget(expandNav);
     auto *group = new QButtonGroup(this);
     group->setExclusive(true);
     QStringList names = {"Панель мониторинга", "Оповещения", "Инциденты",      "События", "Активы",
@@ -350,6 +369,19 @@ Window::Window(Store &s, bool demo)
         sl->addWidget(b);
         connect(b, &QPushButton::clicked, this, [this, i] { navigate(i); });
     }
+    connect(expandNav, &QPushButton::toggled, this, [this, side, names](bool expanded) {
+        side->setFixedWidth(expanded ? 204 : 55);
+        for (int i = 0; i < nav_.size(); ++i) {
+            nav_[i]->setFixedWidth(expanded ? 194 : 40);
+            nav_[i]->setText(expanded ? names[i] : QString());
+            nav_[i]->setProperty("expanded", expanded);
+            nav_[i]->style()->unpolish(nav_[i]);
+            nav_[i]->style()->polish(nav_[i]);
+        }
+        if (!demo_)
+            settings_.setValue("ui/expandedNav", expanded);
+    });
+    expandNav->setChecked(!demo_ && settings_.value("ui/expandedNav", false).toBool());
     workspaceRow->addWidget(side);
 
     auto *workspace = new QWidget;
@@ -405,6 +437,9 @@ Window::Window(Store &s, bool demo)
     themeLayout->setSpacing(2);
     flowTheme_ = button("●  Flow", "themeOption");
     emberTheme_ = button("●  Ember", "themeOption");
+    nightTheme_ = button("◐  Ночь", "themeOption");
+    nightTheme_->setCheckable(true);
+    nightTheme_->setFixedHeight(28);
     flowTheme_->setCheckable(true);
     emberTheme_->setCheckable(true);
     flowTheme_->setFixedHeight(28);
@@ -412,18 +447,28 @@ Window::Window(Store &s, bool demo)
     switcher->setFixedHeight(36);
     themeLayout->addWidget(flowTheme_);
     themeLayout->addWidget(emberTheme_);
-    connect(flowTheme_, &QPushButton::clicked, this, [this] { applyTheme(true); });
-    connect(emberTheme_, &QPushButton::clicked, this, [this] { applyTheme(false); });
+    themeLayout->addWidget(nightTheme_);
+    connect(nightTheme_, &QPushButton::clicked, this, [this] { applyTheme("night"); });
+    connect(flowTheme_, &QPushButton::clicked, this, [this] { applyTheme("flow"); });
+    connect(emberTheme_, &QPushButton::clicked, this, [this] { applyTheme("ember"); });
     bottom->addWidget(switcher);
     bottom->addStretch();
     bottom->addWidget(label("Локальная консоль  /  0.2", "workspaceStatus"));
     bl->addLayout(bottom);
     workspaceRow->addWidget(workspace, 1);
     surfaceLayout->addLayout(workspaceRow, 1);
-    connect(search_, &QLineEdit::textChanged, this, [this] { dirty_ = true; });
+    searchDebounce_.setSingleShot(true);
+    searchDebounce_.setInterval(250);
+    connect(search_, &QLineEdit::textChanged, this, [this] { searchDebounce_.start(); });
+    connect(&searchDebounce_, &QTimer::timeout, this, [this] {
+        eventPage_[0] = eventPage_[1] = 0;
+        dirty_ = true;
+        refreshData();
+    });
     connect(search_, &QLineEdit::returnPressed, this, [this] { navigate(3); });
     connect(alert, &QPushButton::clicked, this, [this] { navigate(1); });
     connect(range_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+        eventPage_[0] = eventPage_[1] = 0;
         dirty_ = true;
         refreshData();
     });
@@ -474,28 +519,34 @@ Window::Window(Store &s, bool demo)
         }
         scan();
     });
-    connect(&firewallProcess_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
-            [this](int code, QProcess::ExitStatus status) {
-                firewallFinished(code == 0 && status == QProcess::NormalExit,
-                                 QString::fromLocal8Bit(firewallProcess_.readAllStandardError()) +
-                                     QString::fromLocal8Bit(firewallProcess_.readAllStandardOutput()));
-            });
-    connect(&firewallProcess_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError e) {
-        if (e == QProcess::FailedToStart)
-            firewallFinished(false, firewallProcess_.errorString());
-    });
     refresh_.setInterval(700);
     connect(&refresh_, &QTimer::timeout, this, [this] {
         if (dirty_)
             refreshData();
     });
     refresh_.start();
+    externalRefresh_.setInterval(5000);
+    connect(&externalRefresh_, &QTimer::timeout, this, [this] {
+        if (isVisible())
+            dirty_ = true;
+    });
+    externalRefresh_.start();
+    for (const auto &entry :
+         QList<QPair<QString, int>>{{"Ctrl+1", 0}, {"Ctrl+2", 2}, {"Ctrl+3", 3}, {"Ctrl+4", 5}}) {
+        auto *key = new QShortcut(QKeySequence(entry.first), this);
+        connect(key, &QShortcut::activated, this, [this, entry] { navigate(entry.second); });
+    }
+    auto *reload = new QShortcut(QKeySequence("F5"), this);
+    connect(reload, &QShortcut::activated, this, [this] {
+        refreshData();
+        refreshEngines();
+    });
+    search_->setClearButtonEnabled(true);
+    search_->setToolTip("Поиск по событиям, инцидентам и активам · Ctrl+K. Enter — открыть события.");
     navigate(0);
-    refreshData();
     refreshEngines();
-    applyTheme(qApp->property("themeOverride").isValid()
-                   ? qApp->property("themeOverride").toString() == "flow"
-                   : settings_.value("ui/theme", "ember").toString() == "flow");
+    applyTheme(qApp->property("themeOverride").isValid() ? qApp->property("themeOverride").toString()
+                                                         : settings_.value("ui/theme", "ember").toString());
     if (!demo_ && settings_.value("collector/enabled", false).toBool())
         startCollector();
 }
@@ -620,6 +671,7 @@ QWidget *Window::dashboard() {
         rl->setContentsMargins(9, 5, 9, 5);
         rl->setSpacing(7);
         auto *go = button("", "moduleIcon");
+        go->setProperty("iconIndex", moduleIcons[i]);
         go->setIcon(icon(moduleIcons[i], QColor("#57515e")));
         go->setIconSize(QSize(17, 17));
         go->setFixedSize(25, 25);
@@ -746,12 +798,16 @@ QWidget *Window::eventsPage(bool alerts) {
     if (!alerts) {
         severity_ = combo({"Все приоритеты", "critical", "high", "medium", "low", "info"});
         toolbar->addWidget(severity_);
-        connect(severity_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] { dirty_ = true; });
+        connect(severity_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+            eventPage_[0] = 0;
+            dirty_ = true;
+            refreshData();
+        });
         auto *load = button("Импорт журналов");
         toolbar->addWidget(load);
         connect(load, &QPushButton::clicked, this, &Window::importEvents);
     }
-    auto *exportBtn = button("Экспорт CSV");
+    auto *exportBtn = button("Экспорт страницы CSV");
     toolbar->addWidget(exportBtn);
     connect(exportBtn, &QPushButton::clicked, this, &Window::exportEvents);
     l->addLayout(toolbar);
@@ -762,8 +818,24 @@ QWidget *Window::eventsPage(bool alerts) {
     t->setColumnWidth(3, 150);
     t->setColumnWidth(4, 130);
     l->addWidget(t, 1);
-    l->addWidget(label("Показаны последние 1 000 записей за выбранный период. Двойной щелчок — подробности.",
-                       "muted"));
+    const int slot = alerts ? 1 : 0;
+    auto *paging = new QHBoxLayout;
+    pageLabels_[slot] = label("", "muted");
+    previousPage_[slot] = button("← Новее");
+    nextPage_[slot] = button("Старее →");
+    paging->addWidget(pageLabels_[slot]);
+    paging->addStretch();
+    paging->addWidget(previousPage_[slot]);
+    paging->addWidget(nextPage_[slot]);
+    l->addLayout(paging);
+    connect(previousPage_[slot], &QPushButton::clicked, this, [this, slot] {
+        eventPage_[slot] = qMax(0, eventPage_[slot] - 1);
+        refreshData();
+    });
+    connect(nextPage_[slot], &QPushButton::clicked, this, [this, slot] {
+        ++eventPage_[slot];
+        refreshData();
+    });
     if (alerts)
         alerts_ = t;
     else
@@ -846,41 +918,10 @@ QWidget *Window::rulesPage() {
     rules_->setColumnWidth(2, 180);
     cl->addWidget(rules_, 1);
     tabs->addTab(cor, "Корреляция SIEM");
-    auto *fw = new QWidget;
-    auto *fl = new QVBoxLayout(fw);
-    auto *fb = new QHBoxLayout;
-    auto *fa = button("Добавить", "primary"), *fe = button("Изменить"), *fd = button("Удалить", "danger"),
-         *preview = button("Предпросмотр"), *apply = button("Применить к ОС"), *rollback = button("Откатить");
-    for (auto *b : {fa, fe, fd})
-        fb->addWidget(b);
-    fb->addStretch();
-    for (auto *b : {preview, rollback, apply})
-        fb->addWidget(b);
-    fl->addLayout(fb);
-    firewall_ = table({"ID", "Название", "Направление", "Источник", "Назначение", "Протокол", "Порт",
-                       "Действие", "Состояние"});
-    firewall_->setColumnWidth(0, 50);
-    firewall_->setColumnWidth(1, 180);
-    for (int i : {2, 5, 6, 7})
-        firewall_->setColumnWidth(i, 100);
-    fl->addWidget(firewall_, 1);
-    firewallStatus_ =
-        label("Черновики. Применение к ОС выполняется отдельно и требует прав администратора.", "muted");
-    firewallStatus_->setWordWrap(true);
-    fl->addWidget(firewallStatus_);
-    auto *hint = label(
-        "L3/L4: правила ОС. L7: сигнатуры открытого HTTP в DPDK inline. TLS не расшифровывается.\nLinux: "
-        "цепочки input/output/forward, порядок по ID. Windows: input/output; блокировка имеет приоритет.",
-        "muted");
-    hint->setWordWrap(true);
-    fl->addWidget(hint);
-    tabs->addTab(fw, "Firewall / NGFW");
-    connect(fa, &QPushButton::clicked, this, [this] { editFirewall(false); });
-    connect(fe, &QPushButton::clicked, this, [this] { editFirewall(true); });
-    connect(fd, &QPushButton::clicked, this, [this] { deleteRow(firewall_, "firewall"); });
-    connect(preview, &QPushButton::clicked, this, &Window::previewFirewall);
-    connect(apply, &QPushButton::clicked, this, [this] { applyFirewall(false); });
-    connect(rollback, &QPushButton::clicked, this, [this] { applyFirewall(true); });
+    ngfw_ = new NgfwPage(store_, demo_);
+    tabs->insertTab(0, ngfw_, "Firewall / NGFW");
+    tabs->setCurrentIndex(0);
+    connect(ngfw_, &NgfwPage::notification, this, &Window::notify);
     return page;
 }
 QWidget *Window::antivirusPage() {
@@ -1114,35 +1155,39 @@ void Window::navigate(int i) {
     subtitle_->setText(subtitles[i]);
     nav_[i]->setChecked(true);
     for (int n = 0; n < nav_.size(); ++n)
-        nav_[n]->setIcon(icon(n, QColor(n == i ? "#ffffff" : "#89808f")));
+        nav_[n]->setIcon(icon(n, QColor(n == i ? "#ffffff" : themeName_ == "night" ? "#b8c3d9" : "#89808f")));
     for (auto it = topNav_.begin(); it != topNav_.end(); ++it)
         it.value()->setChecked(it.key() == i);
     dirty_ = true;
+    refreshData();
 }
-void Window::applyTheme(bool lavender) {
-    lavender_ = lavender;
-    QFile css(":/style.qss");
-    if (css.open(QIODevice::ReadOnly)) {
-        auto style = QString::fromUtf8(css.readAll());
-        if (lavender) {
-            const QMap<QString, QString> colors = {
-                {"#ef773f", "#a08bdc"}, {"#f7a86f", "#c4b4f3"}, {"#ed6939", "#9780d9"},
-                {"#e9e5ed", "#e5ddf8"}, {"#e8e6ec", "#f3e8f5"}, {"#e4e8ef", "#dce7fb"},
-                {"#f4f2f6", "#f2eff9"}, {"#fff2e9", "#f4efff"}, {"#fff8f0", "#f8f3ff"},
-                {"#b3998c", "#a392bf"}, {"#fff9f5", "#f5efff"}, {"#dbb39b", "#c4b4e4"},
-                {"#f7eee8", "#f0eaf8"}, {"#f9e9dd", "#eae1f6"}};
-            for (auto it = colors.begin(); it != colors.end(); ++it)
-                style.replace(it.key(), it.value());
-        }
-        qApp->setStyleSheet(style);
+void Window::applyTheme(const QString &name) {
+    themeName_ = QStringList{"ember", "flow", "night"}.contains(name) ? name : "ember";
+    if (themeName_ != "night")
+        lastLightTheme_ = themeName_;
+    qApp->setPalette(applicationPalette(themeName_));
+    qApp->setStyleSheet(applicationStyle(themeName_));
+    flowTheme_->setChecked(themeName_ == "flow");
+    emberTheme_->setChecked(themeName_ == "ember");
+    nightTheme_->setChecked(themeName_ == "night");
+    chart_->setTheme(themeName_ == "flow");
+    gauge_->setTheme(themeName_ == "flow");
+    networkMap_->setTheme(themeName_ == "flow");
+    chart_->setNightMode(themeName_ == "night");
+    gauge_->setNightMode(themeName_ == "night");
+    networkMap_->setNightMode(themeName_ == "night");
+    for (auto *b : findChildren<QPushButton *>()) {
+        if (b->property("iconIndex").isValid())
+            b->setIcon(icon(b->property("iconIndex").toInt(),
+                            QColor(themeName_ == "night" ? "#c2b3df" : "#57515e")));
     }
-    flowTheme_->setChecked(lavender);
-    emberTheme_->setChecked(!lavender);
-    chart_->setTheme(lavender);
-    gauge_->setTheme(lavender);
-    networkMap_->setTheme(lavender);
+    for (int n = 0; n < nav_.size(); ++n)
+        nav_[n]->setIcon(icon(n, QColor(nav_[n]->isChecked()    ? "#ffffff"
+                                        : themeName_ == "night" ? "#b8c3d9"
+                                                                : "#89808f")));
     if (!demo_)
-        settings_.setValue("ui/theme", lavender ? "flow" : "ember");
+        settings_.setValue("ui/theme", themeName_);
+    dirty_ = true;
 }
 QString Window::since() const {
     return QDateTime::currentDateTimeUtc()
@@ -1153,7 +1198,10 @@ QString Window::since() const {
 }
 void Window::notify(const QString &message, bool error) {
     notice_->setText(message);
-    notice_->setStyleSheet(error ? "background:#fff0f2;color:#b4445c;border-color:#f4d3dc;" : "");
+    notice_->setStyleSheet(error ? (themeName_ == "night"
+                                        ? "background:#3c2533;color:#ffb1c0;border-color:#694152;"
+                                        : "background:#fff0f2;color:#b4445c;border-color:#f4d3dc;")
+                                 : "");
     notice_->show();
 }
 qint64 Window::selected(QTableWidget *t) const {
@@ -1162,80 +1210,112 @@ qint64 Window::selected(QTableWidget *t) const {
 void Window::refreshData() {
     dirty_ = false;
     try {
+        const int page = stack_->currentIndex();
         const auto start = since();
-        metrics_[0]->setText(QLocale().toString(
-            store_.scalar("SELECT COUNT(*) FROM events WHERE time>=?", {start}).toLongLong()));
+        const QString term = "%" + search_->text() + "%";
+        if (page == 1 || page == 3) {
+            const int slot = page == 1 ? 1 : 0;
+            QString sql = "SELECT id,time,source,host,severity,message FROM events WHERE time>=?";
+            QVariantList args{start};
+            if (!search_->text().isEmpty()) {
+                sql += " AND (LOWER(message) LIKE LOWER(?) OR LOWER(host) LIKE LOWER(?) OR LOWER(source) "
+                       "LIKE LOWER(?))";
+                args << term << term << term;
+            }
+            if (page == 1)
+                sql += " AND severity IN ('high','critical')";
+            else if (severity_->currentIndex() > 0) {
+                sql += " AND severity=?";
+                args << severity_->currentText();
+            }
+            sql += " ORDER BY time DESC,id DESC LIMIT 251 OFFSET ?";
+            args << eventPage_[slot] * 250;
+            auto records = store_.rows(sql, args);
+            const bool more = records.size() > 250;
+            if (more)
+                records.removeLast();
+            populate(page == 1 ? alerts_ : events_, records,
+                     {"id", "time", "source", "host", "severity", "message"});
+            pageLabels_[slot]->setText(
+                records.isEmpty() ? "Нет событий по выбранным условиям"
+                                  : QString("Страница %1 · %2 записей · двойной щелчок — подробности")
+                                        .arg(eventPage_[slot] + 1)
+                                        .arg(records.size()));
+            previousPage_[slot]->setEnabled(eventPage_[slot] > 0);
+            nextPage_[slot]->setEnabled(more);
+        } else if (page == 2) {
+            populate(incidents_,
+                     store_.rows("SELECT * FROM incidents WHERE time>=? AND (LOWER(title) LIKE LOWER(?) OR "
+                                 "LOWER(host) LIKE LOWER(?)) ORDER BY id DESC LIMIT 1000",
+                                 {start, term, term}),
+                     {"id", "time", "title", "host", "severity", "status"});
+        } else if (page == 4) {
+            populate(assets_,
+                     store_.rows("SELECT * FROM assets WHERE LOWER(host) LIKE LOWER(?) OR ip LIKE ? ORDER BY "
+                                 "last_seen DESC LIMIT 1000",
+                                 {term, term}),
+                     {"host", "ip", "last_seen", "source"});
+        } else if (page == 5) {
+            populate(rules_, store_.rows("SELECT * FROM rules ORDER BY id"),
+                     {"id", "name", "pattern", "threshold", "window_seconds", "severity", "enabled"});
+        } else if (page == 6) {
+            populate(quarantine_, store_.rows("SELECT * FROM quarantine ORDER BY id DESC LIMIT 1000"),
+                     {"id", "original", "signature", "time", "state"});
+        }
+        if (page != 0 && page != 8)
+            return;
+        const auto summary =
+            store_
+                .rows("SELECT COUNT(*) AS total,COUNT(DISTINCT source) AS sources,SUM(CASE WHEN severity IN "
+                      "('high','critical') THEN 1 ELSE 0 END) AS high FROM events WHERE time>=?",
+                      {start})
+                .value(0);
+        const auto totalEvents = summary["total"].toLongLong(), highEvents = summary["high"].toLongLong();
+        metrics_[0]->setText(QLocale().toString(totalEvents));
         metrics_[1]->setText(
             store_.scalar("SELECT COUNT(*) FROM incidents WHERE status IN ('open','investigating')")
                 .toString());
         metrics_[2]->setText(
             store_.scalar("SELECT COUNT(*) FROM quarantine WHERE state='isolated'").toString());
-        metrics_[3]->setText(
-            store_.scalar("SELECT COUNT(DISTINCT source) FROM events WHERE time>=?", {start}).toString());
-        const auto totalEvents =
-            store_.scalar("SELECT COUNT(*) FROM events WHERE time>=?", {start}).toLongLong();
-        const auto highEvents =
-            store_
-                .scalar("SELECT COUNT(*) FROM events WHERE time>=? AND severity IN ('high','critical')",
-                        {start})
-                .toLongLong();
+        metrics_[3]->setText(summary["sources"].toString());
+        if (page == 8) {
+            populate(audit_, store_.rows("SELECT * FROM audit ORDER BY id DESC LIMIT 500"),
+                     {"time", "action", "detail"});
+            reportPreview_->setHtml(
+                QString("<h2>Сводка за выбранный период</h2><p>%1 — %2</p><p><b>%3</b> событий &nbsp;&nbsp; "
+                        "<b>%4</b> активных инцидентов &nbsp;&nbsp; <b>%5</b> файлов в карантине "
+                        "&nbsp;&nbsp; <b>%6</b> источников</p><p>Хранилище: %7</p>")
+                    .arg(QDateTime::fromString(start, Qt::ISODateWithMs)
+                             .toLocalTime()
+                             .toString("dd.MM.yyyy HH:mm"),
+                         QDateTime::currentDateTime().toString("dd.MM.yyyy HH:mm"), metrics_[0]->text(),
+                         metrics_[1]->text(), metrics_[2]->text(), metrics_[3]->text(),
+                         store_.path().toHtmlEscaped()));
+            return;
+        }
         gauge_->setValues(totalEvents, highEvents);
         highEvents_->setText(QLocale().toString(highEvents));
         focusIncidents_->setText(metrics_[1]->text());
-        const int nodeCount = store_.scalar("SELECT COUNT(*) FROM assets").toInt();
-        networkMap_->setNodeCount(nodeCount);
-        assetCount_->setText(QString::number(nodeCount));
-        QString term = "%" + search_->text() + "%";
-        auto matches = QString(" AND (LOWER(message) LIKE LOWER(?) OR LOWER(host) LIKE LOWER(?) OR "
-                               "LOWER(source) LIKE LOWER(?))");
-        QVariantList args = {start, term, term, term};
-        auto ev = QString("SELECT * FROM events WHERE time>=?") + matches;
-        QString filter = severity_->currentIndex() > 0 ? " AND severity=?" : "";
-        auto ea = args;
-        if (!filter.isEmpty())
-            ea << severity_->currentText();
-        populate(events_, store_.rows(ev + filter + " ORDER BY time DESC,id DESC LIMIT 1000", ea),
-                 {"id", "time", "source", "host", "severity", "message"});
-        populate(alerts_,
-                 store_.rows(
-                     ev + " AND severity IN ('high','critical') ORDER BY time DESC,id DESC LIMIT 1000", args),
-                 {"id", "time", "source", "host", "severity", "message"});
-        populate(incidents_,
-                 store_.rows("SELECT * FROM incidents WHERE time>=? AND (LOWER(title) LIKE LOWER(?) OR "
-                             "LOWER(host) LIKE LOWER(?)) ORDER BY id DESC LIMIT 1000",
-                             {start, term, term}),
-                 {"id", "time", "title", "host", "severity", "status"});
+        const int nodes = store_.scalar("SELECT COUNT(*) FROM assets").toInt();
+        networkMap_->setNodeCount(nodes);
+        assetCount_->setText(QString::number(nodes));
         populate(latest_, store_.rows("SELECT * FROM incidents ORDER BY id DESC LIMIT 5"),
                  {"title", "severity", "status"});
-        populate(assets_,
-                 store_.rows("SELECT * FROM assets WHERE LOWER(host) LIKE LOWER(?) OR ip LIKE ? ORDER BY "
-                             "last_seen DESC LIMIT 1000",
-                             {term, term}),
-                 {"host", "ip", "last_seen", "source"});
-        populate(rules_, store_.rows("SELECT * FROM rules ORDER BY id"),
-                 {"id", "name", "pattern", "threshold", "window_seconds", "severity", "enabled"});
-        populate(
-            firewall_, store_.rows("SELECT * FROM firewall ORDER BY id"),
-            {"id", "name", "direction", "source", "destination", "protocol", "port", "action", "enabled"});
-        populate(quarantine_, store_.rows("SELECT * FROM quarantine ORDER BY id DESC LIMIT 1000"),
-                 {"id", "original", "signature", "time", "state"});
-        populate(audit_, store_.rows("SELECT * FROM audit ORDER BY id DESC LIMIT 500"),
-                 {"time", "action", "detail"});
-        int days = range_->currentIndex() == 0 ? 1 : range_->currentIndex() == 1 ? 7 : 30;
-        int count = days == 1 ? 24 : days;
-        auto now = QDateTime::currentDateTimeUtc();
+        const int days = range_->currentIndex() == 0 ? 1 : range_->currentIndex() == 1 ? 7 : 30;
+        const int count = days == 1 ? 24 : days, chars = days == 1 ? 13 : 10;
+        const auto now = QDateTime::currentDateTimeUtc();
         QList<double> values(count, 0);
         QStringList labels;
         QMap<QString, qint64> grouped;
-        int chars = days == 1 ? 13 : 10;
-        auto buckets = store_.rows(QString("SELECT substr(time,1,%1) AS bucket,COUNT(*) AS total FROM events "
-                                           "WHERE time>=? GROUP BY substr(time,1,%1)")
-                                       .arg(chars),
-                                   {start});
-        for (auto r : buckets)
+        const auto buckets = store_.rows(QString("SELECT substr(time,1,%1) AS bucket,COUNT(*) AS total FROM "
+                                                 "events WHERE time>=? GROUP BY substr(time,1,%1)")
+                                             .arg(chars),
+                                         {start});
+        for (const auto &r : buckets)
             grouped[r["bucket"].toString()] = r["total"].toLongLong();
         for (int i = 0; i < count; ++i) {
-            auto stamp = days == 1 ? now.addSecs(-(count - 1 - i) * 3600) : now.addDays(-(count - 1 - i));
+            const auto stamp =
+                days == 1 ? now.addSecs(-(count - 1 - i) * 3600) : now.addDays(-(count - 1 - i));
             values[i] = double(grouped.value(stamp.toString(Qt::ISODateWithMs).left(chars)));
             labels << stamp.toLocalTime().toString(days == 1 ? "HH:00" : "dd.MM");
         }
@@ -1244,19 +1324,7 @@ void Window::refreshData() {
         moduleStates_[1]->setText(engines_.dpdkRunning ? "Активен" : "Не запущен");
         moduleStates_[2]->setText(
             QString("%1 правил").arg(store_.scalar("SELECT COUNT(*) FROM rules WHERE enabled=1").toInt()));
-        moduleStates_[3]->setText(
-            store_.scalar("SELECT value FROM meta WHERE key='firewall.applied'").isValid() ? "Применялось"
-                                                                                           : "Черновики");
-        reportPreview_->setHtml(
-            QString("<h2 style='color:#17213f'>Сводка за выбранный период</h2><p style='color:#7683a0'>%1 — "
-                    "%2</p><p><b>%3</b> событий &nbsp;&nbsp; <b>%4</b> активных инцидентов &nbsp;&nbsp; "
-                    "<b>%5</b> файлов в карантине &nbsp;&nbsp; <b>%6</b> источников</p><p>Хранилище: %7</p>")
-                .arg(QDateTime::fromString(start, Qt::ISODateWithMs)
-                         .toLocalTime()
-                         .toString("dd.MM.yyyy HH:mm"),
-                     QDateTime::currentDateTime().toString("dd.MM.yyyy HH:mm"), metrics_[0]->text(),
-                     metrics_[1]->text(), metrics_[2]->text(), metrics_[3]->text(),
-                     store_.path().toHtmlEscaped()));
+        moduleStates_[3]->setText(ngfw_->wasAppliedHere() ? "Применялось" : "Настроить");
     } catch (const std::exception &e) {
         notify("Ошибка базы данных: " + QString::fromUtf8(e.what()), true);
     }
@@ -1433,83 +1501,6 @@ void Window::editCorrelation(bool editing) {
     store_.audit("rule.save", name->text());
     dirty_ = true;
 }
-void Window::editFirewall(bool editing) {
-    auto id = editing ? selected(firewall_) : 0;
-    if (editing && !id) {
-        notify("Выберите правило");
-        return;
-    }
-    QVariantMap r;
-    if (id)
-        r = store_.rows("SELECT * FROM firewall WHERE id=?", {id}).first();
-    QDialog d(this);
-    d.setWindowTitle("Правило сетевой защиты");
-    d.setMinimumWidth(540);
-    auto *f = new QFormLayout(&d);
-    auto *name = new QLineEdit(r["name"].toString()),
-         *src = new QLineEdit(r.value("source", "any").toString()),
-         *dst = new QLineEdit(r.value("destination", "any").toString());
-    auto *direction = combo({"input", "output", "forward"}), *protocol = combo({"tcp", "udp", "icmp", "any"}),
-         *action = combo({"drop", "accept"});
-    direction->setCurrentText(r.value("direction", "input").toString());
-    protocol->setCurrentText(r.value("protocol", "tcp").toString());
-    action->setCurrentText(r.value("action", "drop").toString());
-    auto *port = new QSpinBox;
-    port->setRange(0, 65535);
-    port->setSpecialValueText("Любой");
-    port->setValue(r["port"].toInt());
-    auto *enabled = new QCheckBox("Включено");
-    enabled->setChecked(r.value("enabled", 1).toBool());
-    f->addRow("Название", name);
-    f->addRow("Направление", direction);
-    f->addRow("Источник · IP / CIDR / any", src);
-    f->addRow("Назначение · IP / CIDR / any", dst);
-    f->addRow("Протокол", protocol);
-    f->addRow("Порт назначения", port);
-    f->addRow("Действие", action);
-    f->addRow("", enabled);
-    auto *err = label("");
-    err->setWordWrap(true);
-    f->addRow(err);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
-    f->addRow(buttons);
-    QJsonObject policy;
-    connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
-    connect(buttons, &QDialogButtonBox::accepted, &d, [&] {
-        policy = {{"name", name->text()},
-                  {"direction", direction->currentText()},
-                  {"source", src->text().trimmed()},
-                  {"destination", dst->text().trimmed()},
-                  {"protocol", protocol->currentText()},
-                  {"port", port->value()},
-                  {"action", action->currentText()},
-                  {"enabled", enabled->isChecked()}};
-        auto error = validateFirewallRule(policy);
-        if (!error.isEmpty()) {
-            err->setText(error);
-            return;
-        }
-        d.accept();
-    });
-    if (d.exec() != QDialog::Accepted)
-        return;
-    QVariantList v = {policy["name"].toString(),     policy["direction"].toString(),
-                      policy["source"].toString(),   policy["destination"].toString(),
-                      policy["protocol"].toString(), policy["port"].toInt(),
-                      policy["action"].toString(),   int(enabled->isChecked())};
-    if (id) {
-        v << id;
-        store_.exec(
-            "UPDATE firewall SET "
-            "name=?,direction=?,source=?,destination=?,protocol=?,port=?,action=?,enabled=? WHERE id=?",
-            v);
-    } else
-        store_.exec("INSERT INTO firewall(name,direction,source,destination,protocol,port,action,enabled) "
-                    "VALUES(?,?,?,?,?,?,?,?)",
-                    v);
-    store_.audit("firewall.draft", name->text());
-    dirty_ = true;
-}
 void Window::deleteRow(QTableWidget *t, const QString &name) {
     auto id = selected(t);
     if (!id)
@@ -1520,143 +1511,6 @@ void Window::deleteRow(QTableWidget *t, const QString &name) {
         store_.exec("DELETE FROM matches WHERE rule_id=?", {id});
     store_.exec(QString("DELETE FROM %1 WHERE id=?").arg(name), {id});
     store_.audit(name + ".delete", QString::number(id));
-    dirty_ = true;
-}
-QJsonArray Window::firewallPolicy() const {
-    QJsonArray out;
-    for (auto r : store_.rows("SELECT * FROM firewall ORDER BY id")) {
-        auto obj = QJsonObject::fromVariantMap(r);
-        obj["enabled"] = r["enabled"].toInt() != 0;
-        out << obj;
-    }
-    return out;
-}
-void Window::previewFirewall() {
-    QString error;
-    auto policy = firewallPolicy();
-    auto text = compileNft(policy, &error);
-    QDialog d(this);
-    d.setWindowTitle("Предпросмотр политики");
-    d.resize(800, 540);
-    auto *l = new QVBoxLayout(&d);
-    l->addWidget(
-        label("nftables · таблица inet sentinel_siem. Существующие таблицы ОС сохраняются.", "muted"));
-    auto *edit = new QTextEdit;
-    edit->setReadOnly(true);
-    edit->setPlainText(text);
-    l->addWidget(edit);
-    auto *exportBtn = button("Экспорт политики JSON");
-    l->addWidget(exportBtn);
-    connect(exportBtn, &QPushButton::clicked, &d, [&] {
-        auto path = QFileDialog::getSaveFileName(&d, "Политика", "policy.json", "JSON (*.json)");
-        if (!path.isEmpty()) {
-            QString e;
-            if (!save(path, QJsonDocument(policy).toJson(), &e))
-                notify(e, true);
-            else
-                d.accept();
-        }
-    });
-    d.exec();
-}
-void Window::applyFirewall(bool rollback) {
-    if (demo_) {
-        notify("Применение к ОС недоступно в деморежиме. Используйте рабочее подключение PostgreSQL.", true);
-        return;
-    }
-    if (policyFile_) {
-        notify("Применение уже выполняется");
-        return;
-    }
-    auto policy = firewallPolicy();
-    if (rollback) {
-        auto old = store_.scalar("SELECT value FROM meta WHERE key='firewall.previous'").toString();
-        if (old.isEmpty()) {
-            notify("Нет сохранённой политики для отката");
-            return;
-        }
-        policy = QJsonDocument::fromJson(old.toUtf8()).array();
-    }
-    QString error;
-    auto script = compileNft(policy, &error);
-    if (!error.isEmpty()) {
-        notify(error, true);
-        return;
-    }
-    QMessageBox confirm(
-        QMessageBox::Warning, "Применить политику firewall",
-        QString("Будут применены %1 правил. Это может прервать сетевые соединения.\nLinux: изменяется только "
-                "таблица sentinel_siem. Windows: заменяются правила SentinelSIEM; операция не "
-                "атомарна.\nПрава администратора запрашиваются только для helper-процесса.")
-            .arg(policy.size()),
-        QMessageBox::Apply | QMessageBox::Cancel, this);
-    confirm.setDetailedText(script);
-    confirm.setDefaultButton(QMessageBox::Cancel);
-    if (confirm.exec() != QMessageBox::Apply)
-        return;
-    policyFile_ = std::make_unique<QTemporaryFile>(QDir::tempPath() + "/sentinel-policy-XXXXXX.json");
-    if (!policyFile_->open()) {
-        notify(policyFile_->errorString(), true);
-        policyFile_.reset();
-        return;
-    }
-    policyFile_->write(QJsonDocument(policy).toJson());
-    policyFile_->flush();
-    pendingPolicy_ = policy;
-    QString helper = QCoreApplication::applicationDirPath() + "/siem-firewall-helper";
-#ifdef Q_OS_WIN
-    helper += ".exe";
-    auto filename = policyFile_->fileName();
-    auto *watch = new QFutureWatcher<int>(this);
-    connect(watch, &QFutureWatcher<int>::finished, this, [this, watch] {
-        firewallFinished(watch->result() == 0, QString("Windows helper: %1").arg(watch->result()));
-        watch->deleteLater();
-    });
-    watch->setFuture(QtConcurrent::run([helper, filename] {
-        auto command = QString("--apply \"%1\"").arg(QDir::toNativeSeparators(filename));
-        SHELLEXECUTEINFOW info{};
-        info.cbSize = sizeof(info);
-        info.fMask = SEE_MASK_NOCLOSEPROCESS;
-        info.lpVerb = L"runas";
-        info.lpFile = reinterpret_cast<LPCWSTR>(helper.utf16());
-        info.lpParameters = reinterpret_cast<LPCWSTR>(command.utf16());
-        info.nShow = SW_HIDE;
-        if (!ShellExecuteExW(&info))
-            return int(GetLastError());
-        WaitForSingleObject(info.hProcess, INFINITE);
-        DWORD code = 1;
-        GetExitCodeProcess(info.hProcess, &code);
-        CloseHandle(info.hProcess);
-        return int(code);
-    }));
-#else
-    auto pkexec = QStandardPaths::findExecutable("pkexec");
-    if (pkexec.isEmpty()) {
-        notify("Установите polkit (pkexec) для запроса прав администратора", true);
-        policyFile_.reset();
-        return;
-    }
-    firewallProcess_.start(pkexec, {helper, "--apply", policyFile_->fileName()});
-#endif
-    firewallStatus_->setText("Ожидание прав администратора и применения…");
-}
-void Window::firewallFinished(bool success, const QString &message) {
-    if (success) {
-        auto previous = store_.scalar("SELECT value FROM meta WHERE key='firewall.applied'").toString();
-        if (previous.isEmpty())
-            previous = "[]";
-        store_.exec("INSERT INTO meta(key,value) VALUES('firewall.previous',?) ON CONFLICT(key) DO UPDATE "
-                    "SET value=excluded.value",
-                    {previous});
-        store_.exec("INSERT INTO meta(key,value) VALUES('firewall.applied',?) ON CONFLICT(key) DO UPDATE SET "
-                    "value=excluded.value",
-                    {QString::fromUtf8(QJsonDocument(pendingPolicy_).toJson(QJsonDocument::Compact))});
-    }
-    store_.audit(success ? "firewall.applied" : "firewall.error", message);
-    firewallStatus_->setText(success ? "Политика применена. Для возврата доступен откат к предыдущему набору."
-                                     : "Политика не подтверждена: " + message);
-    notify(success ? "Правила firewall применены" : "Ошибка применения: " + message, !success);
-    policyFile_.reset();
     dirty_ = true;
 }
 void Window::scan() {
@@ -1797,29 +1651,58 @@ void Window::startSensor(bool pcap) {
                 this, "Запуск DPDK",
                 inlineMode_->isChecked()
                     ? "Inline требует двух выделенных портов и перенаправляет трафик между ними. Сигнатуры "
-                      "HTTP блокируются, forward-правила берутся из текущего черновика. Запустить?"
+                      "HTTP блокируются, правила берутся из сохранённого профиля DPDK. Запустить?"
                     : "Мониторинг потребляет пакеты выбранных портов. Используйте выделенный "
                       "SPAN/TAP-интерфейс. Запустить?",
                 QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
             return;
-        if (inlineMode_->isChecked()) {
-            sensorPolicy_ = std::make_unique<QTemporaryFile>();
-            if (!sensorPolicy_->open()) {
-                notify("Не удалось сохранить политику", true);
-                return;
-            }
-            sensorPolicy_->write(QJsonDocument(firewallPolicy()).toJson());
-            sensorPolicy_->flush();
-            args << "--inline" << "--policy" << sensorPolicy_->fileName();
-        }
+        if (inlineMode_->isChecked())
+            args << "--inline";
         args << "--";
         args += QProcess::splitCommand(ealArgs_->text());
         if (!demo_)
             settings_.setValue("dpdk/eal", ealArgs_->text());
     }
+    const auto policy = ngfw_->savedDpdkPolicy();
+    const auto error = validateDpdkPolicy(policy);
+    if (!error.isEmpty()) {
+        notify(error, true);
+        return;
+    }
+    sensorPolicy_ = std::make_unique<QTemporaryFile>();
+    if (!sensorPolicy_->open()) {
+        notify(sensorPolicy_->errorString(), true);
+        sensorPolicy_.reset();
+        return;
+    }
+    const auto bytes = QJsonDocument(policy).toJson();
+    if (sensorPolicy_->write(bytes) != bytes.size() || !sensorPolicy_->flush()) {
+        notify("Не удалось записать профиль сенсора", true);
+        sensorPolicy_.reset();
+        return;
+    }
+    args.prepend(sensorPolicy_->fileName());
+    args.prepend("--policy");
     engines_.startDpdk(args);
 }
-bool Window::smokeTest(const QString &screenshot) {
+void Window::closeEvent(QCloseEvent *event) {
+    if (ngfw_->isApplying()) {
+        notify("Дождитесь завершения применения NGFW перед закрытием.", true);
+        event->ignore();
+        return;
+    }
+    if (ngfw_->hasUnsavedChanges()) {
+        const auto answer =
+            QMessageBox::question(this, "Несохранённый профиль NGFW", "Сохранить изменения перед закрытием?",
+                                  QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+        if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !ngfw_->saveChanges())) {
+            event->ignore();
+            return;
+        }
+    }
+    event->accept();
+}
+bool Window::smokeTest(const QString &screenshot, int finalPage) {
     for (int i = 0; i < stack_->count(); ++i) {
         navigate(i);
         refreshData();
@@ -1827,7 +1710,7 @@ bool Window::smokeTest(const QString &screenshot) {
         if (stack_->currentIndex() != i)
             return false;
     }
-    navigate(0);
+    navigate(finalPage);
     refreshData();
     QApplication::processEvents();
     if (!screenshot.isEmpty())

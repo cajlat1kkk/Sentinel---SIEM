@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+import time
 
 SOURCE = Path(__file__).resolve().parents[2]
 LOCK = json.loads((SOURCE / "packaging/windows/msys2-packages.lock.json").read_text())
@@ -27,8 +28,16 @@ def fetch():
         name, meta = item
         target = cache / meta["file"]
         if not target.exists() or hashlib.sha256(target.read_bytes()).hexdigest() != meta["sha256"]:
-            with urllib.request.urlopen(mirror + meta["file"], timeout=45) as response:
-                content = response.read()
+            for attempt in range(3):
+                try:
+                    print(f"Downloading {name} (attempt {attempt + 1})", flush=True)
+                    with urllib.request.urlopen(mirror + meta["file"], timeout=90) as response:
+                        content = response.read()
+                    break
+                except (OSError, TimeoutError):
+                    if attempt == 2:
+                        raise
+                    time.sleep(2)
             if hashlib.sha256(content).hexdigest() != meta["sha256"]:
                 raise RuntimeError("SHA-256 mismatch: " + name)
             target.write_bytes(content)
@@ -93,6 +102,8 @@ def stage():
     (bundle / "qt.conf").write_text("[Paths]\nPrefix=.\nPlugins=.\n")
     shutil.copytree(MINGW / "share/licenses", bundle / "licenses", dirs_exist_ok=True)
     shutil.copy2(SOURCE / "README.md", bundle / "README.md")
+    shutil.copytree(SOURCE / "docs", bundle / "docs", dirs_exist_ok=True)
+    shutil.copytree(SOURCE / "samples", bundle / "samples", dirs_exist_ok=True)
     manifest = dict(LOCK)
     manifest["system_dll_imports"] = sorted(system_imports)
     manifest["bundled_files"] = {str(p.relative_to(bundle)): hashlib.sha256(p.read_bytes()).hexdigest()

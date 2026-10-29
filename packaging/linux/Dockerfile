@@ -14,7 +14,7 @@ RUN if [ -n "$DEBIAN_MIRROR" ] && [ -f /etc/apt/sources.list.d/debian.sources ];
     && rm -rf /var/lib/apt/lists/*
 RUN apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
        -o APT::Update::Error-Mode=any update \
-    && apt-get install -y --no-install-recommends file \
+    && apt-get install -y --no-install-recommends file iproute2 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /work
 COPY . .

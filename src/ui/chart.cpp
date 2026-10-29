@@ -26,6 +26,10 @@ void Chart::setTheme(bool lavender) {
     lavender_ = lavender;
     update();
 }
+void Chart::setNightMode(bool night) {
+    night_ = night;
+    update();
+}
 QRectF Chart::plotRect() const {
     return QRectF(38, 32, qMax(0, width() - 52), qMax(0, height() - 66));
 }
@@ -48,10 +52,12 @@ void Chart::paintEvent(QPaintEvent *) {
     }
     const double unit = std::pow(10.0, std::floor(std::log10(maximum)));
     maximum = qMax(4.0, std::ceil(maximum / unit) * unit);
-    const QColor muted("#a3a0a6"), accent(lavender_ ? "#9b89d0" : "#ee8651");
+    const QColor muted(night_ ? "#abb7cb" : "#a3a0a6");
+    const QColor accent(night_ ? "#c1a0ed" : lavender_ ? "#9b89d0" : "#ee8651");
     for (int i = 0; i <= 4; ++i) {
         double y = plot.bottom() - plot.height() * i / 4;
-        p.setPen(QPen(QColor(i ? "#f1eff2" : "#e9e6eb"), 1));
+        p.setPen(QPen(QColor(night_ ? (i ? "#30394c" : "#46516a")
+                                   : (i ? "#f1eff2" : "#e9e6eb")), 1));
         p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
         p.setPen(muted);
         p.drawText(QRectF(0, y - 8, 28, 16), Qt::AlignRight | Qt::AlignVCenter,
@@ -84,18 +90,18 @@ void Chart::paintEvent(QPaintEvent *) {
             shape.addRoundedRect(bar, qMin(12.0, barWidth / 2), qMin(12.0, barWidth / 2));
             if (i == selected) {
                 QLinearGradient fill(bar.topLeft(), bar.bottomRight());
-                fill.setColorAt(0, QColor("#f7a071"));
-                fill.setColorAt(1, QColor("#e97742"));
+                fill.setColorAt(0, QColor(night_ ? "#d1b4fa" : "#f7a071"));
+                fill.setColorAt(1, QColor(night_ ? "#9a78cf" : "#e97742"));
                 p.fillPath(shape, fill);
                 p.setPen(QPen(QColor(255, 255, 255, 170), 1));
                 if (bar.height() > 30)
                     p.drawLine(QPointF(bar.left() + 3, bar.top() + 16),
                                QPointF(bar.left() + 3, bar.bottom() - 7));
             } else {
-                p.fillPath(shape, QColor("#faf9fa"));
+                p.fillPath(shape, QColor(night_ ? "#273044" : "#faf9fa"));
                 p.save();
                 p.setClipPath(shape);
-                p.setPen(QPen(QColor("#e1dee3"), 1));
+                p.setPen(QPen(QColor(night_ ? "#59617a" : "#e1dee3"), 1));
                 for (double y = bar.top() - bar.width(); y < bar.bottom() + bar.width(); y += 7)
                     p.drawLine(QPointF(bar.left() - 1, y + bar.width()), QPointF(bar.right() + 1, y));
                 p.restore();
@@ -114,16 +120,17 @@ void Chart::paintEvent(QPaintEvent *) {
         area.lineTo(points.first().x(), plot.bottom());
         area.closeSubpath();
         QLinearGradient fill(0, plot.top(), 0, plot.bottom());
-        fill.setColorAt(0, QColor(191, 177, 225, 55));
-        fill.setColorAt(1, QColor(218, 210, 239, 5));
+        fill.setColorAt(0, night_ ? QColor(171, 136, 222, 105) : QColor(191, 177, 225, 55));
+        fill.setColorAt(1, night_ ? QColor(171, 136, 222, 10) : QColor(218, 210, 239, 5));
         p.fillPath(area, fill);
         p.save();
         p.setClipPath(area);
-        p.setPen(QPen(QColor(180, 164, 214, 70), 1));
+        p.setPen(QPen(night_ ? QColor(192, 158, 238, 85) : QColor(180, 164, 214, 70), 1));
         for (double x = plot.left(); x < plot.right(); x += 4)
             p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
         p.restore();
-        p.setPen(QPen(QColor("#8e819f"), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.setPen(QPen(QColor(night_ ? "#c1a3ed" : "#8e819f"), 2,
+                      Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p.drawPath(line);
         if (count == 1) {
             p.setBrush(accent);
@@ -140,12 +147,12 @@ void Chart::paintEvent(QPaintEvent *) {
         const double bubbleWidth = qMax(32, QFontMetrics(bubbleFont).horizontalAdvance(value) + 18);
         QRectF bubble(point.x() - bubbleWidth / 2, qMax(1.0, point.y() - 31), bubbleWidth, 23);
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor("#2c2b2f"));
+        p.setBrush(QColor(night_ ? "#514267" : "#2c2b2f"));
         p.drawRoundedRect(bubble, 11.5, 11.5);
         p.setPen(Qt::white);
         p.drawText(bubble, Qt::AlignCenter, value);
-        p.setPen(QPen(Qt::white, 2));
-        p.setBrush(QColor(lavender_ ? "#8e819f" : "#7e482d"));
+        p.setPen(QPen(QColor(night_ ? "#1e2431" : "#ffffff"), 2));
+        p.setBrush(QColor(night_ ? "#eadbff" : lavender_ ? "#8e819f" : "#7e482d"));
         p.drawEllipse(QPointF(point.x(), point.y() + (lavender_ ? 0 : qMin(7.0, plot.bottom() - point.y()))),
                       3.5, 3.5);
     }

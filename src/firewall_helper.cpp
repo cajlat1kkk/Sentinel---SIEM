@@ -40,7 +40,13 @@ static int applyWindows(const QJsonArray &rules) {
     // Fixed names bound the namespace. No changes to profiles or default OS policy.
     for (int i = 0; i < 1000; ++i) {
         QString name = QString("SentinelSIEM-%1").arg(i);
-        stringSet(name, [&](BSTR b) { return collection->Remove(b); });
+        const auto removed = stringSet(name, [&](BSTR b) { return collection->Remove(b); });
+        if (FAILED(removed)) {
+            collection->Release();
+            policy->Release();
+            CoUninitialize();
+            return 15;
+        }
     }
     int index = 0, code = 0;
     for (auto v : rules) {
@@ -72,10 +78,13 @@ static int applyWindows(const QJsonArray &rules) {
         checked(stringSet(local == "any" ? "*" : local, [&](BSTR b) { return rule->put_LocalAddresses(b); }));
         checked(
             stringSet(remote == "any" ? "*" : remote, [&](BSTR b) { return rule->put_RemoteAddresses(b); }));
-        if (r["port"].toInt() > 0)
-            checked(stringSet(QString::number(r["port"].toInt()), [&](BSTR b) {
-                return inbound ? rule->put_LocalPorts(b) : rule->put_RemotePorts(b);
-            }));
+        if (protocol == 6 || protocol == 17) {
+            const auto localPorts = firewallPorts(r, !inbound), remotePorts = firewallPorts(r, inbound);
+            checked(stringSet(localPorts == "any" ? "*" : localPorts,
+                              [&](BSTR b) { return rule->put_LocalPorts(b); }));
+            checked(stringSet(remotePorts == "any" ? "*" : remotePorts,
+                              [&](BSTR b) { return rule->put_RemotePorts(b); }));
+        }
         checked(rule->put_Profiles(NET_FW_PROFILE2_ALL));
         checked(rule->put_Action(r["action"] == "drop" ? NET_FW_ACTION_BLOCK : NET_FW_ACTION_ALLOW));
         checked(rule->put_Enabled(VARIANT_TRUE));
@@ -100,32 +109,33 @@ int main(int argc, char **argv) {
         return 2;
     }
     QFile f(args[2]);
-    if (!f.open(QIODevice::ReadOnly) || f.size() > 1024 * 1024) {
-        err << "Cannot read policy (max 1 MiB)\n";
+    if (!f.open(QIODevice::ReadOnly) || f.size() > 2 * 1024 * 1024) {
+        err << "Cannot read policy (max 2 MiB)\n";
         return 2;
     }
     QJsonParseError parse;
     auto doc = QJsonDocument::fromJson(f.readAll(), &parse);
-    if (parse.error != QJsonParseError::NoError || !doc.isArray()) {
-        err << "Expected JSON array\n";
+    if (parse.error != QJsonParseError::NoError || (!doc.isArray() && !doc.isObject())) {
+        err << "Expected JSON policy object or legacy array\n";
         return 2;
     }
     QString error;
-    auto rules = doc.array();
-    auto script = compileNft(rules, &error);
+    auto configuration =
+        normalizeFirewallPolicy(doc.isArray() ? QJsonValue(doc.array()) : QJsonValue(doc.object()), &error);
+#ifdef Q_OS_WIN
+    if (error.isEmpty())
+        error = validateWindowsPolicy(configuration);
+#else
+    QString script;
+    if (error.isEmpty())
+        script = compileNftPolicy(configuration, &error);
+#endif
     if (!error.isEmpty()) {
         err << error << '\n';
         return 2;
     }
 #ifdef Q_OS_WIN
-    for (auto v : rules) {
-        auto r = v.toObject();
-        if (r["direction"] == "forward" || r["protocol"] == "icmp") {
-            err << "Windows MVP: forward/ICMP policies are unsupported\n";
-            return 2;
-        }
-    }
-    return applyWindows(rules);
+    return applyWindows(configuration["rules"].toArray());
 #elif defined(Q_OS_LINUX)
     QString nft = QFile::exists("/usr/sbin/nft") ? "/usr/sbin/nft" : "/usr/bin/nft";
     auto run = [&](bool check) {

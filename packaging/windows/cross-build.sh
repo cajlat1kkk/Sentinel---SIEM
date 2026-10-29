@@ -33,6 +33,7 @@ portable="$project_root/dist/windows/portable"
 portable_win=$(winepath -w "$portable")
 if [ "${SIEM_WINDOWS_SMOKE:-1}" = 1 ]; then
     QT_QPA_PLATFORM=offscreen wine "$portable/sentinel-siem.exe" --demo --smoke-test
+    QT_QPA_PLATFORM=offscreen wine "$portable/sentinel-siem.exe" --demo --theme night --smoke-test
     mkdir -p "$SIEM_WINDOWS_SDK/test-run"
     cp -a "$portable/." "$SIEM_WINDOWS_SDK/test-run/"
     cp "$SIEM_WINDOWS_SDK/build/siem-tests.exe" "$SIEM_WINDOWS_SDK/test-run/"
@@ -40,6 +41,10 @@ if [ "${SIEM_WINDOWS_SMOKE:-1}" = 1 ]; then
     test_report_win=$(winepath -w "$SIEM_WINDOWS_SDK/test-run/core-results.txt")
     wine "$SIEM_WINDOWS_SDK/test-run/siem-tests.exe" -o "$test_report_win,txt"
     cat "$SIEM_WINDOWS_SDK/test-run/core-results.txt"
+    cp "$SIEM_WINDOWS_SDK/build/siem-ui-tests.exe" "$SIEM_WINDOWS_SDK/test-run/"
+    ui_report_win=$(winepath -w "$SIEM_WINDOWS_SDK/test-run/ui-results.txt")
+    QT_QPA_PLATFORM=offscreen wine "$SIEM_WINDOWS_SDK/test-run/siem-ui-tests.exe" -o "$ui_report_win,txt"
+    cat "$SIEM_WINDOWS_SDK/test-run/ui-results.txt"
 fi
 script_win=$(winepath -w "$project_root/packaging/windows/installer.nsi")
 output_win=$(winepath -w "$project_root/dist/windows/Sentinel-SIEM-0.2.0-windows-x64-setup.exe")

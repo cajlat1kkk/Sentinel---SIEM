@@ -1,4 +1,5 @@
 #include "packet.h"
+#include "core/firewall.h"
 #include <QHostAddress>
 #include <QUrl>
 namespace siem {
@@ -6,6 +7,9 @@ static quint16 u16(const QByteArray &b, int i) {
     return (quint8(b[i]) << 8) | quint8(b[i + 1]);
 }
 Packet inspectPacket(const QByteArray &b) {
+    return inspectPacket(b, {{"sql_injection", true}, {"xss", true}, {"path_traversal", true}});
+}
+Packet inspectPacket(const QByteArray &b, const QJsonObject &inspection) {
     Packet p;
     if (b.size() < 14)
         return p;
@@ -16,6 +20,13 @@ Packet inspectPacket(const QByteArray &b) {
             return p;
         type = u16(b, offset + 2);
         offset += 4;
+    }
+    p.etherType = type;
+    if (type == 0x0806) { // ARP is required for transparent Ethernet forwarding.
+        p.protocol = "arp";
+        p.valid = b.size() >= offset + 28 && u16(b, offset) == 1 && u16(b, offset + 2) == 0x0800 &&
+                  quint8(b[offset + 4]) == 6 && quint8(b[offset + 5]) == 4;
+        return p;
     }
     int transport = 0, end = 0;
     quint8 proto = 0;
@@ -55,18 +66,30 @@ Packet inspectPacket(const QByteArray &b) {
         proto = quint8(b[offset + 6]);
         transport = offset + 40;
         end = transport + size;
-        // IPv6 extension headers are not reassembled/decoded in this MVP.
-        if (proto == 0 || proto == 43 || proto == 44 || proto == 60) {
-            p.fragmented = true;
-            p.valid = true;
-            p.protocol = "ipv6-extension";
-            return p;
+        int extensions = 0;
+        while (proto == 0 || proto == 43 || proto == 44 || proto == 60 || proto == 51) {
+            if (++extensions > 8 || transport + 2 > end)
+                return p;
+            const auto next = quint8(b[transport]);
+            const int length = proto == 44   ? 8
+                               : proto == 51 ? (quint8(b[transport + 1]) + 2) * 4
+                                             : (quint8(b[transport + 1]) + 1) * 8;
+            if (transport + length > end)
+                return p;
+            if (proto == 44)
+                p.fragmented = true;
+            transport += length;
+            proto = next;
+            if (p.fragmented)
+                break;
         }
     } else
         return p;
     p.protocol = proto == 6 ? "tcp" : proto == 17 ? "udp" : (proto == 1 || proto == 58) ? "icmp" : "other";
     if (p.fragmented) {
         p.valid = true;
+        if (inspection["block_fragments"].toBool())
+            p.signature = "IP fragment · inspection unavailable";
         return p;
     }
     int payload = transport;
@@ -96,16 +119,39 @@ Packet inspectPacket(const QByteArray &b) {
         auto decoded = QByteArray::fromPercentEncoding(raw).toLower();
         bool http = decoded.startsWith("get ") || decoded.startsWith("post ") || decoded.startsWith("put ") ||
                     decoded.startsWith("head ") || decoded.startsWith("delete ") ||
-                    decoded.startsWith("patch ");
+                    decoded.startsWith("patch ") || decoded.startsWith("options ") ||
+                    decoded.startsWith("connect ");
         if (http) {
-            if (decoded.contains("<script") || decoded.contains("javascript:") ||
-                decoded.contains("onerror="))
+            if (inspection["xss"].toBool() &&
+                (decoded.contains("<script") || decoded.contains("javascript:") ||
+                 decoded.contains("onerror=")))
                 p.signature = "XSS · HTTP payload";
-            else if (decoded.contains("union select") || decoded.contains("union all select") ||
-                     decoded.contains("' or 1=1") || decoded.contains("' or '1'='1"))
+            else if (inspection["sql_injection"].toBool() &&
+                     (decoded.contains("union select") || decoded.contains("union all select") ||
+                      decoded.contains("' or 1=1") || decoded.contains("' or '1'='1")))
                 p.signature = "SQL injection · HTTP payload";
-            else if (decoded.contains("../") || decoded.contains("..\\"))
+            else if (inspection["path_traversal"].toBool() &&
+                     (decoded.contains("../") || decoded.contains("..\\")))
                 p.signature = "Path traversal · HTTP payload";
+            const auto header = raw.left(raw.indexOf("\r\n\r\n") < 0 ? raw.size() : raw.indexOf("\r\n\r\n"));
+            for (auto line : header.split('\n')) {
+                if (!line.toLower().startsWith("host:"))
+                    continue;
+                auto host = QString::fromLatin1(line.mid(5).trimmed()).toLower();
+                if (host.count(':') == 1)
+                    host = host.section(':', 0, 0);
+                if (host.endsWith('.'))
+                    host.chop(1);
+                p.httpHost = host;
+                for (const auto &v : inspection["blocked_domains"].toArray()) {
+                    auto domain = v.toString().toLower();
+                    const bool matches = domain.startsWith("*.")
+                                             ? host.endsWith(domain.mid(1)) && host.size() > domain.size() - 1
+                                             : host == domain;
+                    if (matches)
+                        p.signature = "Blocked HTTP Host · " + host;
+                }
+            }
         }
     }
     return p;
@@ -118,9 +164,29 @@ static bool matchesIp(const QString &ip, const QString &filter) {
     return QHostAddress(ip) == QHostAddress(filter);
 }
 bool packetBlocked(const Packet &p, const QJsonArray &rules, bool blockSignatures) {
-    if (blockSignatures && !p.signature.isEmpty())
+    auto policy = defaultFirewallPolicy();
+    policy["stateful"] = false;
+    policy["rules"] = rules;
+    auto inspection = policy["inspection"].toObject();
+    inspection["mode"] = blockSignatures ? "block" : "alert";
+    policy["inspection"] = inspection;
+    return packetBlocked(p, policy);
+}
+bool packetBlocked(const Packet &p, const QJsonObject &policy, QString *reason) {
+    auto drop = [&](const QString &why) {
+        if (reason)
+            *reason = why;
         return true;
-    for (auto v : rules) {
+    };
+    if (reason)
+        reason->clear();
+    if (!p.valid)
+        return drop("Malformed or unsupported Ethernet/IP frame");
+    if (p.protocol == "arp")
+        return false;
+    if (!p.signature.isEmpty() && policy["inspection"].toObject()["mode"] == "block")
+        return drop(p.signature);
+    for (auto v : policy["rules"].toArray()) {
         auto r = v.toObject();
         if (!r["enabled"].toBool(true) || r["direction"] != "forward")
             continue;
@@ -129,11 +195,14 @@ bool packetBlocked(const Packet &p, const QJsonArray &rules, bool blockSignature
             continue;
         if (r["protocol"] != "any" && r["protocol"].toString() != p.protocol)
             continue;
-        if (r["port"].toInt() > 0 && r["port"].toInt() != p.destinationPort)
+        if (!firewallPortMatches(firewallPorts(r, true), p.sourcePort) ||
+            !firewallPortMatches(firewallPorts(r, false), p.destinationPort))
             continue;
-        return r["action"] == "drop";
+        if (reason && r["log"].toBool())
+            *reason = "Rule: " + r["name"].toString();
+        return r["action"] == "drop" ? drop("Rule: " + r["name"].toString()) : false;
     }
-    return false;
+    return policy["defaults"].toObject()["forward"] == "drop" ? drop("Forward default: drop") : false;
 }
 QJsonObject packetEvent(const Packet &p) {
     return {{"type", "event"},
@@ -150,6 +219,7 @@ QJsonObject packetEvent(const Packet &p) {
                                               : p.signature},
             {"dst_ip", p.destination},
             {"dst_port", p.destinationPort},
+            {"http_host", p.httpHost},
             {"fragmented", p.fragmented}};
 }
 } // namespace siem

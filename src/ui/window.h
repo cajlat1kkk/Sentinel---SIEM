@@ -19,6 +19,7 @@
 #include <QTextEdit>
 #include <memory>
 namespace siem {
+class NgfwPage;
 class Chart;
 class GaugeWidget;
 class NetworkMapWidget;
@@ -27,7 +28,10 @@ class Window : public QMainWindow {
   public:
     Window(Store &store, bool demo = false);
     void navigate(int index);
-    bool smokeTest(const QString &screenshot);
+    bool smokeTest(const QString &screenshot, int finalPage = 0);
+
+  protected:
+    void closeEvent(QCloseEvent *event) override;
 
   private:
     Store &store_;
@@ -37,12 +41,11 @@ class Window : public QMainWindow {
     Engines engines_;
     QSettings settings_;
     QStackedWidget *stack_;
-    QLabel *title_, *subtitle_, *notice_, *collectorState_, *scanStatus_, *firewallStatus_, *dpdkState_,
-        *vppState_, *footer_;
+    QLabel *title_, *subtitle_, *notice_, *collectorState_, *scanStatus_, *dpdkState_, *vppState_, *footer_;
     QLineEdit *search_, *scanPath_, *vppSocket_, *ealArgs_;
     QComboBox *range_, *severity_;
-    QTableWidget *events_, *alerts_, *incidents_, *assets_, *latest_, *rules_, *firewall_, *findings_,
-        *quarantine_, *audit_;
+    QTableWidget *events_, *alerts_, *incidents_, *assets_, *latest_, *rules_, *findings_, *quarantine_,
+        *audit_;
     QList<QLabel *> metrics_, moduleStates_;
     QLabel *dpdkPackets_, *dpdkBytes_, *dpdkDrops_, *dpdkBadge_, *vppBadge_;
     Chart *chart_;
@@ -51,8 +54,13 @@ class Window : public QMainWindow {
     QCheckBox *watchScan_, *inlineMode_, *autoCollect_;
     QList<QPushButton *> nav_;
     QMap<int, QPushButton *> topNav_;
-    QPushButton *emberTheme_, *flowTheme_;
-    bool lavender_ = false;
+    QPushButton *emberTheme_, *flowTheme_, *nightTheme_;
+    QString themeName_ = "ember", lastLightTheme_ = "ember";
+    NgfwPage *ngfw_;
+    QTimer searchDebounce_, externalRefresh_;
+    int eventPage_[2] = {0, 0};
+    QLabel *pageLabels_[2];
+    QPushButton *previousPage_[2], *nextPage_[2];
     GaugeWidget *gauge_;
     NetworkMapWidget *networkMap_;
     QLabel *focusIncidents_, *highEvents_, *assetCount_;
@@ -61,9 +69,7 @@ class Window : public QMainWindow {
     QFileSystemWatcher watcher_;
     QTimer refresh_, watchDebounce_;
     bool dirty_ = true;
-    QProcess firewallProcess_;
-    QJsonArray pendingPolicy_;
-    std::unique_ptr<QTemporaryFile> policyFile_, sensorPolicy_;
+    std::unique_ptr<QTemporaryFile> sensorPolicy_;
     QWidget *dashboard();
     QWidget *eventsPage(bool alerts);
     QWidget *incidentsPage();
@@ -75,18 +81,13 @@ class Window : public QMainWindow {
     QWidget *settingsPage();
     void refreshData();
     void refreshEngines();
-    void applyTheme(bool lavender);
+    void applyTheme(const QString &name);
     void importEvents();
     void exportEvents();
     void incidentDialog();
     void eventDialog(QTableWidget *table);
     void editCorrelation(bool editing);
-    void editFirewall(bool editing);
     void deleteRow(QTableWidget *table, const QString &tableName);
-    void previewFirewall();
-    void applyFirewall(bool rollback = false);
-    void firewallFinished(bool success, const QString &message);
-    QJsonArray firewallPolicy() const;
     void scan();
     void loadHashes();
     void isolate();

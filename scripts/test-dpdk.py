@@ -75,12 +75,21 @@ def main():
         assert any("XSS" in row["message"] for row in events)
         print("PASS: native DPDK monitoring reads 3 packets, detects SQLi/XSS, blocks none")
 
-        for name, policy, expected_forwarded in [
-            ("l7", [], 1),
-            ("l3l4", [{"name": "Lab HTTP block", "direction": "forward", "source": "10.0.0.0/8",
+        base = {"version": 2, "stateful": False}
+        cases = [
+            ("legacy-l7", [], [0], 2),
+            ("legacy-l3l4", [{"name": "Lab HTTP block", "direction": "forward", "source": "10.0.0.0/8",
                        "destination": "any", "protocol": "tcp", "port": 80,
-                       "action": "drop", "enabled": True}], 0),
-        ]:
+                       "action": "drop", "enabled": True}], [], 2),
+            ("inspection-off", base, [0,1,2], 0),
+            ("alert-only", dict(base, inspection={"mode":"alert", "sql_injection":True, "xss":True}), [0,1,2], 2),
+            ("sql-only", dict(base, inspection={"mode":"block", "sql_injection":True}), [0,2], 1),
+            ("default-drop", dict(base, defaults={"forward":"drop"}), [], 0),
+            ("ports", dict(base, rules=[{"name":"Port ranges", "direction":"forward", "source":"any", "destination":"any", "protocol":"tcp", "source_ports":"1-65535", "destination_ports":"79-81,443", "action":"drop"}]), [], 0),
+            ("host-block", dict(base, inspection={"mode":"block", "blocked_domains":["lab.invalid"]}), [], 3),
+        ]
+        for name, policy, expected_indices, expected_alerts in cases:
+            expected_forwarded = len(expected_indices)
             policy_path = work / f"{name}.json"
             policy_path.write_text(json.dumps(policy), encoding="utf-8")
             tx0, tx1 = work / f"{name}-tx0.pcap", work / f"{name}-tx1.pcap"
@@ -90,14 +99,13 @@ def main():
                    f"--vdev=net_pcap1,rx_pcap={empty},tx_pcap={tx1}"]
             records, stats = run(sensor, ["--inline", "--policy", str(policy_path), "--seconds", "1",
                                           "--", *eal])
-            assert stats["packets"] == 3 and stats["alerts"] == 2, stats
+            assert stats["packets"] == 3 and stats["alerts"] == expected_alerts, (name, stats)
             assert stats["forwarded"] == expected_forwarded, stats
             assert stats["dropped"] == 3 - expected_forwarded, stats
             assert len(packets(tx0)) == 0
             forwarded = packets(tx1)
             assert len(forwarded) == expected_forwarded
-            if expected_forwarded:
-                assert forwarded == [original[0]], "Inline must forward only the benign frame, unchanged"
+            assert forwarded == [original[i] for i in expected_indices], "Only permitted frames must be forwarded, unchanged"
             print(f"PASS: {name} inline forwards {expected_forwarded}, drops {3 - expected_forwarded}; TX PCAP verified")
 
 

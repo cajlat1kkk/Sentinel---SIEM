@@ -2,6 +2,7 @@
 #include "core/firewall.h"
 #include "core/scanner.h"
 #include "core/store.h"
+#include "network/engines.h"
 #include "network/packet.h"
 #include <QFile>
 #include <QJsonDocument>
@@ -124,6 +125,84 @@ class CoreTests : public QObject {
         text = compileNft({r}, &error);
         QVERIFY(!text.contains("dport"));
     }
+    void expandedPolicies() {
+        QString error;
+        auto p = normalizeFirewallPolicy(QJsonObject{{"stateful", false}}, &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QVERIFY(validateDpdkPolicy(p).isEmpty());
+        auto r = rule();
+        r["port"] = 0;
+        r["source_ports"] = "49152-65535";
+        r["destination_ports"] = "80,8000-8080";
+        p["rules"] = QJsonArray{r};
+        QVERIFY(packetBlocked(inspectPacket(frame("GET / HTTP/1.1\r\nHost: good.test\r\n\r\n")), p));
+        r["source_ports"] = "1000-2000";
+        p["rules"] = QJsonArray{r};
+        QVERIFY(!packetBlocked(inspectPacket(frame("GET / HTTP/1.1\r\n\r\n")), p));
+        auto i = p["inspection"].toObject();
+        i["blocked_domains"] = QJsonArray{"*.bad.test"};
+        i["mode"] = "block";
+        p["inspection"] = i;
+        auto packet = inspectPacket(frame("GET / HTTP/1.1\r\nHost: Sub.Bad.Test:80\r\n\r\n"), i);
+        QVERIFY(packet.signature.contains("Blocked HTTP Host"));
+        QVERIFY(packetBlocked(packet, p));
+        QVERIFY(inspectPacket(frame("GET / HTTP/1.1\r\nHost: notbad.test\r\n\r\n"), i).signature.isEmpty());
+        i["mode"] = "alert";
+        p["inspection"] = i;
+        QVERIFY(!packetBlocked(packet, p));
+        QVERIFY(!validateNftPolicy(p).isEmpty());
+        p = defaultFirewallPolicy();
+        QVERIFY(!validateDpdkPolicy(p).isEmpty());
+        r = rule();
+        r["direction"] = "input";
+        r["in_interface"] = "eth0\"; flush ruleset";
+        p["rules"] = QJsonArray{r};
+        QVERIFY(!validateNftPolicy(p).isEmpty());
+        p = defaultFirewallPolicy();
+        p["nat"] = QJsonArray{QJsonObject{{"name", "test"},
+                                          {"type", "dnat"},
+                                          {"to_address", "10.0.0.2"},
+                                          {"protocol", "tcp"},
+                                          {"port", 8080},
+                                          {"to_port", 80}}};
+        p = normalizeFirewallPolicy(p, &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QVERIFY(compileNftPolicy(p, &error).contains("dnat to 10.0.0.2:80"));
+        QVERIFY(error.isEmpty());
+        QVERIFY(!validateDpdkPolicy(p).isEmpty());
+        QVERIFY(!validateWindowsPolicy(p).isEmpty());
+    }
+    void policyHistoryTransaction() {
+        QTemporaryDir dir;
+        Store store(dir.filePath("history.db"));
+        auto first = defaultFirewallPolicy(), second = first;
+        second["stateful"] = false;
+        const QString prefix = "ngfw.linux.host.test";
+        store.recordPolicyApplication(prefix, first, "first");
+        store.recordPolicyApplication(prefix, second, "second");
+        const auto previous =
+            store.scalar("SELECT value FROM meta WHERE key=?", {prefix + ".previous"}).toString();
+        QCOMPARE(QJsonDocument::fromJson(previous.toUtf8()).object(), first);
+        store.exec("DROP TABLE audit");
+        QVERIFY_EXCEPTION_THROWN(store.recordPolicyApplication(prefix, first, "must rollback"),
+                                 std::runtime_error);
+        QCOMPARE(
+            QJsonDocument::fromJson(
+                store.scalar("SELECT value FROM meta WHERE key=?", {prefix + ".applied"}).toString().toUtf8())
+                .object(),
+            second);
+        QCOMPARE(store.scalar("SELECT value FROM meta WHERE key=?", {prefix + ".previous"}).toString(),
+                 previous);
+    }
+    void compareAndSetProfiles() {
+        QTemporaryDir dir;
+        Store s(dir.filePath("db"));
+        QVERIFY(s.compareAndSetMeta("profile", "", "first"));
+        QVERIFY(!s.compareAndSetMeta("profile", "", "lost insert"));
+        QVERIFY(s.compareAndSetMeta("profile", "first", "second"));
+        QVERIFY(!s.compareAndSetMeta("profile", "first", "lost update"));
+        QCOMPARE(s.scalar("SELECT value FROM meta WHERE key='profile'").toString(), QString("second"));
+    }
     void packetInspection() {
         auto bytes = frame("GET /?q=%27%20OR%201=1 HTTP/1.1\r\nHost: lab\r\n\r\n");
         auto p = inspectPacket(bytes);
@@ -145,6 +224,35 @@ class CoreTests : public QObject {
         QVERIFY(f.signature.isEmpty());
         auto xss = inspectPacket(frame("GET /?q=%3Cscript%3E HTTP/1.1\r\n\r\n"));
         QVERIFY(xss.signature.contains("XSS"));
+    }
+    void dpdkAdapter() {
+        const auto sensor = QCoreApplication::applicationDirPath() + "/siem-dpdk";
+        if (!QFileInfo::exists(sensor))
+            QSKIP("DPDK sensor not built on this platform");
+        const auto capture = QFINDTESTDATA("../samples/http-lab.pcap");
+        QVERIFY(!capture.isEmpty());
+        QTemporaryDir dir;
+        Store store(dir.filePath("adapter.db"));
+        Engines engines(store);
+        QVERIFY(engines.startDpdk({"--pcap", capture, "--seconds", "1"}));
+        QTRY_VERIFY_WITH_TIMEOUT(!engines.stats.isEmpty(), 6000);
+        QCOMPARE(engines.stats["packets"].toInt(), 3);
+        QCOMPARE(store.scalar("SELECT COUNT(*) FROM events WHERE source='DPDK'").toInt(), 3);
+        QCOMPARE(store.scalar("SELECT COUNT(*) FROM incidents").toInt(), 2);
+        QTRY_VERIFY_WITH_TIMEOUT(!engines.dpdkRunning, 3000);
+    }
+    void vppAdapter() {
+        const auto socket = qEnvironmentVariable("SIEM_TEST_VPP_SOCKET");
+        if (socket.isEmpty())
+            QSKIP("Set SIEM_TEST_VPP_SOCKET to a private running VPP lab");
+        QTemporaryDir dir;
+        Store store(dir.filePath("vpp.db"));
+        Engines engines(store);
+        engines.pollVpp(socket);
+        QTRY_VERIFY_WITH_TIMEOUT(engines.vppConnected, 6000);
+        QVERIFY(engines.vppOutput.contains("pg0"));
+        QVERIFY(engines.vppOutput.contains("pg1"));
+        QVERIFY(engines.vppOutput.contains("tx packets"));
     }
     void antivirusAndQuarantine() {
         QTemporaryDir dir;
@@ -214,8 +322,12 @@ class CoreTests : public QObject {
         QVERIFY(id > 0);
         QCOMPARE(store.scalar("SELECT message FROM events WHERE id=?", {id}).toString(), e.message);
         QVERIFY(store.scalar("SELECT COUNT(*) FROM incidents WHERE event_id=?", {id}).toInt() > 0);
-        auto r = rule();
-        QVERIFY(!store.exportJson().isEmpty());
+        QVERIFY(store.compareAndSetMeta("ngfw.pg-test.draft", "", "{\"version\":2}"));
+        QVERIFY(!store.compareAndSetMeta("ngfw.pg-test.draft", "", "conflict"));
+        QVERIFY(store.compareAndSetMeta("ngfw.pg-test.draft", "{\"version\":2}",
+                                        "{\"version\":2,\"stateful\":false}"));
+        QVERIFY(!store.compareAndSetMeta("ngfw.pg-test.draft", "stale", "lost-update"));
+        QVERIFY(store.exportJson().contains("ngfw_profiles"));
         store.audit("test.complete", "PostgreSQL persistence and correlation verified");
     }
 };
