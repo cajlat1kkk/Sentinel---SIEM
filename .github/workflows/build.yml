@@ -1,18 +1,30 @@
 name: Native desktop packages
 on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   linux:
+    name: Ubuntu · Qt / DPDK / NGFW / DEB
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Build Debian package and test
+      - name: Build package and run C++ / UI / DPDK tests
         run: bash scripts/package-deb.sh
+      - name: Verify real nftables filtering and NAT in isolated namespace
+        run: bash scripts/test-firewall-container.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: sentinel-linux-deb
+          name: sentinel-ubuntu-24.04-amd64
           path: dist/deb/*.deb
+          if-no-files-found: error
   windows:
+    name: Windows · MSVC / Qt / tests / EXE
     runs-on: windows-2022
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
@@ -23,12 +35,13 @@ jobs:
           cache: true
       - name: Install NSIS
         run: choco install nsis -y --no-progress
-      - name: Build and package
+      - name: Build, test and package
         shell: pwsh
         run: |
           $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           ./packaging/windows/build.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: sentinel-windows-installer
-          path: build-windows/*.exe
+          name: sentinel-windows-x64-installer
+          path: build-windows/sentinel-siem-*.exe
+          if-no-files-found: error
