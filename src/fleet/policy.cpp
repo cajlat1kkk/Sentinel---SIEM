@@ -11,7 +11,7 @@ namespace siem::fleet {
 static QString stateFile(const QJsonObject &c) { return QDir(c["state_dir"].toString()).filePath("policy-state.json"); }
 static QJsonObject readState(const QJsonObject &c) { return QFile::exists(stateFile(c)) ? readObject(stateFile(c)) : QJsonObject{}; }
 static void saveState(const QJsonObject &c,const QJsonObject &s) { writePrivate(stateFile(c),QJsonDocument(s).toJson()); }
-static QJsonObject nativePolicy(const QJsonObject &p) { return p["firewall"].toObject()[nativeBackend()].toObject(defaultFirewallPolicy()); }
+static QJsonObject nativePolicy(const QJsonObject &p) { return p["firewall"].toObject().value(nativeBackend()).toObject(defaultFirewallPolicy()); }
 QString PolicyController::firewallHelper() {
     return QDir(QCoreApplication::applicationDirPath()).filePath(
 #ifdef Q_OS_WIN
@@ -43,7 +43,7 @@ PolicyController::PolicyController(const QJsonObject &c,const QString &path,QObj
 }
 QJsonObject PolicyController::state() const { return readState(config_); }
 void PolicyController::save(const QJsonObject &s) const { saveState(config_,s); }
-QJsonObject PolicyController::activePolicy() const { return state()["active"].toObject()["policy"].toObject(defaultEndpointPolicy()); }
+QJsonObject PolicyController::activePolicy() const { return state()["active"].toObject().value("policy").toObject(defaultEndpointPolicy()); }
 QJsonObject PolicyController::health() const {
     const auto s=state(); const auto pending=s["pending"].toObject();
     return {{"policy_token",pending.isEmpty() ? s["active"].toObject()["token"].toString() : pending["token"].toString()},
@@ -64,7 +64,7 @@ void PolicyController::rollback(const QJsonObject &config,const QString &token) 
     auto s=readState(config); const auto pending=s["pending"].toObject();
     if(pending.isEmpty() || pending["token"].toString()!=token) return;
     QString error;
-    if(applyBlocking(s["active"].toObject()["policy"].toObject(defaultEndpointPolicy()),directory,&error)) {
+    if(applyBlocking(s["active"].toObject().value("policy").toObject(defaultEndpointPolicy()),directory,&error)) {
         s["failed_token"]=token; s.remove("pending"); s["error"]="Policy rolled back: server confirmation was not received";
     } else s["error"]="Rollback failed; retrying on restart: "+error;
     saveState(config,s);
@@ -98,11 +98,11 @@ void PolicyController::accept(const QJsonObject &desired,const QString &confirma
     require(!token.isEmpty() && token.size()<=96,"Invalid policy version");
     if(token==s["active"].toObject()["token"].toString() || token==s["failed_token"].toString()) return;
     auto policy=desired["policy"].toObject(); auto error=validateEndpointPolicy(policy); require(error.isEmpty(),error);
-    const bool changed=nativePolicy(policy)!=nativePolicy(activePolicy());
-    if(changed && !config_["manage_firewall"].toBool(false)) {
+    const bool firewallChanged=nativePolicy(policy)!=nativePolicy(activePolicy());
+    if(firewallChanged && !config_["manage_firewall"].toBool(false)) {
         s["error"]="Remote firewall management is disabled in local agent configuration"; s["failed_token"]=token; save(s); emit changed(); return;
     }
-    if(!changed) { s["active"]=QJsonObject{{"token",token},{"policy",policy}}; s["error"]=""; save(s); emit changed(); return; }
+    if(!firewallChanged) { s["active"]=QJsonObject{{"token",token},{"policy",policy}}; s["error"]=""; save(s); emit changed(); return; }
     lock.unlock(); apply(desired);
 }
 void PolicyController::apply(const QJsonObject &desired) {
