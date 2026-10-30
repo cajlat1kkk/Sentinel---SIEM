@@ -16,6 +16,7 @@
 *.jks
 *.keystore
 *.kdbx
+*.token
 *.local.json
 *.local.yaml
 *.local.yml

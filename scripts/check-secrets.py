@@ -34,7 +34,7 @@ def private_path(name):
         return True
     if p.name.startswith(".env") and not p.name.endswith(".example"):
         return True
-    if re.search(r"\.(pem|key|p12|pfx|crt|cer|csr|jks|keystore|kdbx|sqlite.*|db|dump|backup|exe|dll|deb|pkg\.tar\.zst)$", name, re.I):
+    if re.search(r"\.(pem|key|p12|pfx|crt|cer|csr|jks|keystore|kdbx|token|sqlite.*|db|dump|backup|exe|dll|deb|pkg\.tar\.zst)$", name, re.I):
         return True
     if re.search(r"\.local\.(json|ya?ml)$", name):
         return True

@@ -10,7 +10,7 @@ RUN if [ -n "$DEBIAN_MIRROR" ] && [ -f /etc/apt/sources.list.d/debian.sources ];
     && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
        install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config qt6-base-dev qt6-svg-dev \
-    libqt6sql6-psql libqt6sql6-sqlite libdpdk-dev dpkg-dev nftables python3 libssl-dev openssl postgresql \
+    libqt6sql6-psql libqt6sql6-sqlite libdpdk-dev dpkg-dev nftables python3 libssl-dev openssl postgresql libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
        -o APT::Update::Error-Mode=any update \

@@ -46,6 +46,10 @@ if [ "${SIEM_WINDOWS_SMOKE:-1}" = 1 ]; then
     ui_report_win=$(winepath -w "$SIEM_WINDOWS_SDK/test-run/ui-results.txt")
     QT_QPA_PLATFORM=offscreen wine "$SIEM_WINDOWS_SDK/test-run/siem-ui-tests.exe" -o "$ui_report_win,txt"
     cat "$SIEM_WINDOWS_SDK/test-run/ui-results.txt"
+    cp "$SIEM_WINDOWS_SDK/build/siem-fleet-tests.exe" "$SIEM_WINDOWS_SDK/test-run/"
+    fleet_report_win=$(winepath -w "$SIEM_WINDOWS_SDK/test-run/fleet-results.txt")
+    wine "$SIEM_WINDOWS_SDK/test-run/siem-fleet-tests.exe" -o "$fleet_report_win,txt"
+    cat "$SIEM_WINDOWS_SDK/test-run/fleet-results.txt"
 fi
 script_win=$(winepath -w "$project_root/packaging/windows/installer.nsi")
 output_win=$(winepath -w "$project_root/dist/windows/Sentinel-SIEM-$project_version-windows-x64-setup.exe")

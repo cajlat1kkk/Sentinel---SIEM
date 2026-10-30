@@ -8,9 +8,10 @@
 #include <QTextStream>
 #include <QVersionNumber>
 #ifdef Q_OS_WIN
+#include <windows.h>
+
 #include <bcrypt.h>
 #include <wincrypt.h>
-#include <windows.h>
 #else
 #include <openssl/evp.h>
 #include <openssl/pem.h>
@@ -36,20 +37,27 @@ static bool verify(const QByteArray &key, const QByteArray &message, const QByte
     BCRYPT_KEY_HANDLE handle = nullptr;
     const bool imported = CryptImportPublicKeyInfoEx2(X509_ASN_ENCODING, info, 0, nullptr, &handle);
     LocalFree(info);
-    if (!imported)
-        return false;
+    require(imported, QString("Windows public-key import failed: %1").arg(GetLastError()));
     ULONG bits = 0, got = 0;
     const auto hash = QCryptographicHash::hash(message, QCryptographicHash::Sha256);
     BCRYPT_PKCS1_PADDING_INFO padding{BCRYPT_SHA256_ALGORITHM};
-    bool ok = BCryptGetProperty(handle, BCRYPT_KEY_LENGTH, reinterpret_cast<PUCHAR>(&bits), sizeof(bits),
-                                &got, 0) == 0 &&
-              bits >= 2048 &&
-              BCryptVerifySignature(
-                  handle, &padding, reinterpret_cast<PUCHAR>(const_cast<char *>(hash.constData())),
-                  ULONG(hash.size()), reinterpret_cast<PUCHAR>(const_cast<char *>(signature.constData())),
-                  ULONG(signature.size()), BCRYPT_PAD_PKCS1) == 0;
+    // KeyLength applies to symmetric providers; KeyStrength is the RSA key bit count.
+    const auto propertyStatus = BCryptGetProperty(handle, BCRYPT_KEY_STRENGTH,
+                                                  reinterpret_cast<PUCHAR>(&bits), sizeof(bits), &got, 0);
+    if (propertyStatus != 0 || bits < 2048) {
+        BCryptDestroyKey(handle);
+        require(false, QString("Windows RSA key length rejected: status %1, bits %2")
+                           .arg(quint32(propertyStatus), 0, 16)
+                           .arg(bits));
+    }
+    const auto signatureStatus = BCryptVerifySignature(
+        handle, &padding, reinterpret_cast<PUCHAR>(const_cast<char *>(hash.constData())), ULONG(hash.size()),
+        reinterpret_cast<PUCHAR>(const_cast<char *>(signature.constData())), ULONG(signature.size()),
+        BCRYPT_PAD_PKCS1);
     BCryptDestroyKey(handle);
-    return ok;
+    require(signatureStatus == 0,
+            QString("Windows signature verification failed: %1").arg(quint32(signatureStatus), 0, 16));
+    return true;
 #else
     auto *bio = BIO_new_mem_buf(key.constData(), int(key.size()));
     if (!bio)
@@ -84,6 +92,7 @@ int main(int argc, char **argv) {
     p.addOption({"public-key", "Locally pinned release public key (not supplied by the downloaded manifest)",
                  "file"});
     p.addOption({"package", "Downloaded package in a protected staging directory", "file"});
+    p.addOption({"report", "Write a machine-readable verification result", "file"});
     p.addOption(
         {"minimum-sequence", "Last installed release sequence; reject replay/downgrade", "number", "0"});
     p.process(app);
@@ -124,9 +133,22 @@ int main(int argc, char **argv) {
                 "Package SHA-256 mismatch");
         QTextStream(stdout) << "Verified release " << m["version"].toString() << ", sequence "
                             << qint64(sequence) << '\n';
+        if (p.isSet("report"))
+            writePrivate(p.value("report"), QJsonDocument(QJsonObject{{"ok", true},
+                                                                      {"version", m["version"]},
+                                                                      {"sequence", m["sequence"]}})
+                                                .toJson());
         return 0;
     } catch (const std::exception &e) {
         QTextStream(stderr) << e.what() << '\n';
+        if (p.isSet("report")) {
+            try {
+                writePrivate(p.value("report"),
+                             QJsonDocument(QJsonObject{{"ok", false}, {"error", QString::fromUtf8(e.what())}})
+                                 .toJson());
+            } catch (...) {
+            }
+        }
         return 1;
     }
 }

@@ -1,5 +1,7 @@
 # Архитектура Sentinel SIEM
 
+В 0.3 добавлен отдельный управляемый режим: `FleetWindow → RpcClient → mutual TLS → siem-server → PostgreSQL`, а также `siem-agent → durable spool → mutual TLS`. SQL серверного режима выполняется в отдельном потоке. GUI не содержит пароля PostgreSQL в этом режиме. Схема и ограничения ниже описывают сохранённую **локальную консоль**; фоновая служба и сервер описаны в [FLEET.md](FLEET.md).
+
 ```text
 Qt Widgets desktop (C++20, без web runtime)
   ├─ Store / QPSQL ───────── PostgreSQL

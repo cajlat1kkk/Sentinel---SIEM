@@ -37,8 +37,10 @@ Store::Store(const DatabaseConfig &c, QObject *parent)
     db_.setUserName(c.user);
     db_.setPassword(c.password);
     QString options = "connect_timeout=5;application_name=sentinel-siem";
-    if (!c.sslMode.isEmpty()) options += ";sslmode=" + c.sslMode;
-    if (!c.sslRootCert.isEmpty()) options += ";sslrootcert=" + c.sslRootCert;
+    if (!c.sslMode.isEmpty())
+        options += ";sslmode=" + c.sslMode;
+    if (!c.sslRootCert.isEmpty())
+        options += ";sslrootcert=" + c.sslRootCert;
     db_.setConnectOptions(options);
     if (!db_.open()) {
         auto error = db_.lastError().text();
@@ -94,10 +96,14 @@ Store::~Store() {
 }
 QList<QVariantMap> Store::rows(const QString &sql, const QVariantList &args) const {
     QSqlQuery q(db_);
-    check(q.prepare(sql), q);
-    for (const auto &v : args)
-        q.addBindValue(v);
-    check(q.exec(), q);
+    if (args.isEmpty()) {
+        check(q.exec(sql), q);
+    } else {
+        check(q.prepare(sql), q);
+        for (const auto &v : args)
+            q.addBindValue(v);
+        check(q.exec(), q);
+    }
     QList<QVariantMap> out;
     while (q.next()) {
         QVariantMap row;
@@ -125,10 +131,16 @@ qint64 Store::exec(const QString &sql, const QVariantList &args) {
             statement += " RETURNING id";
     }
     QSqlQuery q(db_);
-    check(q.prepare(statement), q);
-    for (const auto &v : args)
-        q.addBindValue(v);
-    check(q.exec(), q);
+    // Qt 6.4's QPSQL uses SQL PREPARE, which cannot prepare SET/DDL.
+    // Static statements without parameters execute directly; values remain bound.
+    if (args.isEmpty()) {
+        check(q.exec(statement), q);
+    } else {
+        check(q.prepare(statement), q);
+        for (const auto &v : args)
+            q.addBindValue(v);
+        check(q.exec(), q);
+    }
     if (returning)
         return q.next() ? q.value(0).toLongLong() : 0;
     // QPSQL::lastInsertId() issues SELECT lastval(), which aborts a transaction
@@ -157,7 +169,8 @@ int Store::retainEvents(int days, int batchSize) {
     atomic([&] {
         const auto candidates = rows("SELECT id FROM events WHERE received<? AND id NOT IN "
                                      "(SELECT event_id FROM incidents WHERE event_id IS NOT NULL) "
-                                     "ORDER BY id LIMIT ?", {cutoff, batchSize});
+                                     "ORDER BY id LIMIT ?",
+                                     {cutoff, batchSize});
         for (const auto &r : candidates) {
             exec("DELETE FROM matches WHERE event_id=?", {r["id"]});
             exec("DELETE FROM events WHERE id=?", {r["id"]});
@@ -176,7 +189,8 @@ qint64 Store::ingest(const Event &e, const QString &deliveryId) {
     try {
         if (!deliveryId.isEmpty() &&
             rows("INSERT INTO deliveries(id,received) VALUES(?,?) ON CONFLICT(id) DO NOTHING RETURNING id",
-                 {deliveryId, now}).isEmpty()) {
+                 {deliveryId, now})
+                .isEmpty()) {
             db_.rollback();
             return 0;
         }

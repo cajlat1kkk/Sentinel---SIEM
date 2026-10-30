@@ -1,19 +1,18 @@
 # Sentinel SIEM — нативное desktop-приложение
 
-C++20 / Qt 6 Widgets, **PostgreSQL** для рабочих данных. Интерфейс на русском: светлая поверхность, скруглённые карточки, чёрная навигационная капсула и две палитры — Ember (оранжевая) и Flow (лавандовая). Переключатель находится внизу окна; в рабочем режиме выбор сохраняется. Приложение запускается отдельным нативным процессом: Electron, браузер, JavaScript, Python backend и HTTP-сервер не используются.
+C++20 / Qt 6 Widgets, **PostgreSQL** для рабочих данных. Интерфейс на русском, три палитры: Ember, Flow и Night. Приложение запускается отдельным нативным процессом, без браузера и Electron.
+
+В версии **0.3.0** добавлены сервер управления, фоновый агент Windows/Linux и отдельный режим desktop-консоли для парка ПК. Соединения защищены взаимным TLS; регистрация устройств выполняется одноразовым кодом, привязанным к сертификату. [Инструкция развёртывания и границы реализации](docs/FLEET.md).
 
 Рабочий MVP для лабораторной эксплуатации: сбор и поиск событий, корреляция, расследования, антивирусная проверка, карантин, сетевые политики, нативный DPDK-сенсор и получение состояния VPP. Границы сетевой и антивирусной защиты перечислены ниже: это не замена промышленному EDR/NGFW.
 
-[Предпросмотр Ember](docs/screenshots/ember.png) · [Предпросмотр Flow](docs/screenshots/flow.png)
+[Предпросмотр Ember](docs/screenshots/ember.png) · [Предпросмотр Flow](docs/screenshots/flow.png) · [Ночная тема](docs/screenshots/night.png)
 
 ## Готовые сборки
 
-- [Windows x64 — установщик EXE](dist/windows/Sentinel-SIEM-0.2.0-windows-x64-setup.exe)
-- [Windows x64 — portable ZIP](dist/windows/Sentinel-SIEM-0.2.0-windows-x64-portable.zip)
-- [Debian 13 amd64 — DEB](dist/deb/sentinel-siem-0.2.0-Linux.deb)
-- [Arch/CachyOS x86_64 — пакет pacman](dist/arch/sentinel-siem-0.2.0-1-x86_64.pkg.tar.zst)
+Windows EXE и Ubuntu DEB доступны в **Artifacts** успешно завершившегося запуска [GitHub Actions](https://github.com/cajlat1kkk/Sentinel---SIEM/actions). Выбирайте запуск нужного коммита. Бинарные пакеты не хранятся в Git; локальная упаковка создаёт их в `dist/windows`, `dist/deb` и `dist/arch`.
 
-Текущий `.deb` собран для Debian 13 / Qt 6.8.2; для Ubuntu 24.04 пересоберите его штатным Dockerfile. Windows установщик включает Qt, QPSQL, libpq и зависимости, не требует администратора для установки; запрос UAC появляется при применении firewall. Установщик не подписан. В Windows доступен пункт Demo в меню приложения.
+Штатный Dockerfile собирает DEB для Ubuntu 24.04; базовый дистрибутив можно изменить параметром `SIEM_DEB_BASE`. Native Windows MSVC/CPack EXE предназначен для установки в Program Files; MinGW-установщик — для пользовательской консоли. Пакеты включают Qt/QPSQL и зависимости. Для службы требуется машинная установка и отдельная конфигурация. Windows Authenticode-подписи пока нет.
 
 ## Быстрый запуск на текущей машине
 
@@ -23,6 +22,10 @@ cmake --build build -j 4
 ./build/sentinel-siem --demo
 # Альтернативная палитра из первого референса:
 ./build/sentinel-siem --demo --theme flow
+# Ночная тема:
+./build/sentinel-siem --demo --theme night
+# Консоль управления парком ПК (после настройки сертификатов/сервера):
+./build/sentinel-siem --fleet /absolute/path/console.json --theme night
 ```
 
 `--demo` показывает изолированные примеры событий во временной SQLite. PostgreSQL не требуется, тестовые данные удаляются при выходе. В деморежиме применение firewall к ОС отключено. Службы DPDK/VPP и антивирус не изображаются работающими без реального подключения.
@@ -134,7 +137,7 @@ Arch/CachyOS:
 ```bash
 sudo pacman -S --needed base-devel cmake ninja qt6-base qt6-svg postgresql-libs dpdk
 bash scripts/package-arch.sh
-sudo pacman -U dist/arch/sentinel-siem-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U dist/arch/sentinel-siem-0.3.0-1-x86_64.pkg.tar.zst
 ```
 
 Debian/Ubuntu: `.deb` необходимо собирать на целевом базовом дистрибутиве, а не из Arch-бинарников:
@@ -143,7 +146,7 @@ Debian/Ubuntu: `.deb` необходимо собирать на целевом 
 bash scripts/package-deb.sh  # по умолчанию Ubuntu 24.04 через Docker
 # другая базовая система, например Debian 13:
 SIEM_DEB_BASE=debian:13-slim bash scripts/package-deb.sh
-sudo apt install ./dist/deb/sentinel-siem-0.2.0-Linux.deb
+sudo apt install ./dist/deb/sentinel-siem-0.3.0-Linux.deb
 ```
 
 Пакеты динамически зависят от библиотек соответствующего дистрибутива. PostgreSQL server, ClamAV и VPP устанавливаются отдельно. Для запуска на текущем Arch/CachyOS также доступен обычный исполняемый файл `build/sentinel-siem` с системными Qt-библиотеками.

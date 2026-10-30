@@ -104,6 +104,7 @@ def stage():
     shutil.copy2(SOURCE / "README.md", bundle / "README.md")
     shutil.copytree(SOURCE / "docs", bundle / "docs", dirs_exist_ok=True)
     shutil.copytree(SOURCE / "samples", bundle / "samples", dirs_exist_ok=True)
+    shutil.copytree(SOURCE / "packaging/fleet", bundle / "fleet", dirs_exist_ok=True)
     manifest = dict(LOCK)
     manifest["system_dll_imports"] = sorted(system_imports)
     manifest["bundled_files"] = {str(p.relative_to(bundle)): hashlib.sha256(p.read_bytes()).hexdigest()

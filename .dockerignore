@@ -11,6 +11,7 @@ dist
 **/*.crt
 **/*.cer
 **/*.csr
+**/*.token
 **/*.sqlite*
 **/*.db
 **/*.dump
