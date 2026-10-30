@@ -1,5 +1,5 @@
 pkgname=sentinel-siem
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Native C++ SIEM console with PostgreSQL, antivirus and DPDK network inspection'
 arch=('x86_64')

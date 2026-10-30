@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
     Application app(argc, argv);
     QCoreApplication::setApplicationName("Sentinel SIEM");
     QCoreApplication::setOrganizationName("Sentinel");
-    QCoreApplication::setApplicationVersion("0.2.0");
+    QCoreApplication::setApplicationVersion("0.3.0");
     app.setStyle("Fusion");
     QFont font(QFontDatabase::families().contains("Google Sans") ? "Google Sans"
                : QFontDatabase::families().contains("Open Sans") ? "Open Sans"

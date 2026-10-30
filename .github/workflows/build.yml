@@ -6,7 +6,17 @@ concurrency:
   group: native-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 jobs:
+  secrets:
+    name: Repository · secrets and private files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 scripts/check-secrets.py
   linux:
+    needs: secrets
     name: Ubuntu · Qt / DPDK / NGFW / DEB
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -22,6 +32,7 @@ jobs:
           path: dist/deb/*.deb
           if-no-files-found: error
   windows:
+    needs: secrets
     name: Windows · MSVC / Qt / tests / EXE
     runs-on: windows-2022
     timeout-minutes: 30
