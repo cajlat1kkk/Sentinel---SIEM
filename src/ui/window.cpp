@@ -1143,7 +1143,7 @@ QWidget *Window::settingsPage() {
         QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     });
     l->addStretch();
-    l->addWidget(label("SENTINEL SIEM  /  0.2.0\nC++20 · Qt 6 Widgets · PostgreSQL · DPDK · VPP", "muted"));
+    l->addWidget(label("SENTINEL SIEM  /  0.3.0\nC++20 · Qt 6 Widgets · PostgreSQL · DPDK · VPP", "muted"));
     return page;
 }
 

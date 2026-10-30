@@ -10,8 +10,10 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import re
+import shutil
 import subprocess
 import tarfile
+import tempfile
 import urllib.request
 import zipfile
 
@@ -69,8 +71,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--staged", action="store_true")
     parser.add_argument("--paths-only", action="store_true")
+    parser.add_argument("--working-tree", action="store_true", help="Scan modified and new non-ignored files without staging them")
     args = parser.parse_args()
-    names = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
+    names = subprocess.check_output(["git", "ls-files", "-z"] + (["--cached", "--others", "--exclude-standard"] if args.working_tree else []), cwd=ROOT).decode().split("\0")
     bad = [name for name in names if name and private_path(name)]
     if bad:
         print("Private/runtime files must be removed from the Git index:")
@@ -79,6 +82,14 @@ def main():
     if args.paths_only:
         print("Tracked paths: no private or generated artifacts")
         return 0
+    if args.working_tree:
+        with tempfile.TemporaryDirectory(prefix="sentinel-source-audit-") as directory:
+            for name in names:
+                if name and (ROOT / name).is_file():
+                    destination = Path(directory) / name
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(ROOT / name, destination, follow_symlinks=False)
+            return subprocess.call([str(scanner()), "dir", "--redact", "--no-banner", "--ignore-gitleaks-allow", "--timeout", "120", directory], cwd=ROOT)
     command = [str(scanner()), "git", "--redact", "--no-banner", "--ignore-gitleaks-allow", "--timeout", "120"]
     command += ["--pre-commit", "--staged"] if args.staged else ["--log-opts=--all"]
     return subprocess.call(command, cwd=ROOT)

@@ -10,7 +10,7 @@ RUN if [ -n "$DEBIAN_MIRROR" ] && [ -f /etc/apt/sources.list.d/debian.sources ];
     && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
        install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config qt6-base-dev qt6-svg-dev \
-    libqt6sql6-psql libqt6sql6-sqlite libdpdk-dev dpkg-dev nftables python3 \
+    libqt6sql6-psql libqt6sql6-sqlite libdpdk-dev dpkg-dev nftables python3 libssl-dev openssl postgresql \
     && rm -rf /var/lib/apt/lists/*
 RUN apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
        -o APT::Update::Error-Mode=any update \
@@ -21,6 +21,8 @@ COPY . .
 RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
     && cmake --build build -j 4 \
     && QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure \
+    && python3 scripts/test-fleet.py \
+    && python3 scripts/test-update.py \
     && python3 scripts/test-dpdk.py \
     && pcap_package=$(dpkg-query -W -f='${Package}' 'librte-net-pcap*') \
     && test -n "$pcap_package" \

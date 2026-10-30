@@ -161,5 +161,9 @@ with tempfile.TemporaryDirectory(prefix="sentinel-nft-") as directory:
     apply([])
     assert snapshot("unrelated_lab_table") == untouched
     print("PASS: DNAT rewrites an ingress UDP destination port; unrelated tables remain intact")
+    subprocess.run([str(Path(helper).with_name("siem-fleet-tests")), "firewallWatchdog"],
+                   env=dict(os.environ, SIEM_TEST_NFT="1"), check=True, timeout=30)
+    assert snapshot("unrelated_lab_table") == untouched
+    print("PASS: expired unconfirmed policy is reverted by the independent watchdog")
 
 PY

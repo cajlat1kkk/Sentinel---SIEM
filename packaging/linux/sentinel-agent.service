@@ -1,0 +1,28 @@
+[Unit]
+Description=Sentinel background endpoint agent
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/sentinel-agent/agent.json
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/siem-agent --config /etc/sentinel-agent/agent.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=35
+StateDirectory=sentinel-agent
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH
+
+[Install]
+WantedBy=multi-user.target

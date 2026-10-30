@@ -8,7 +8,8 @@ namespace siem::fleet {
 class PolicyController final : public QObject {
     Q_OBJECT
   public:
-    PolicyController(const QJsonObject &config, const QString &configPath, QObject *parent=nullptr);
+    PolicyController(const QJsonObject &config, const QString &configPath, QObject *parent = nullptr);
+    ~PolicyController() override;
     void recover();
     void accept(const QJsonObject &desired, const QString &confirmation);
     QJsonObject health() const;
@@ -16,6 +17,7 @@ class PolicyController final : public QObject {
     static int watchdog(const QJsonObject &config, const QString &expectedToken);
   signals:
     void changed();
+
   private:
     QJsonObject config_;
     QString configPath_, statePath_, directory_;
@@ -25,7 +27,7 @@ class PolicyController final : public QObject {
     void save(const QJsonObject &value) const;
     void apply(const QJsonObject &desired);
     static QString firewallHelper();
-    static bool applyBlocking(const QJsonObject &policy,const QString &directory,QString *error);
-    static void rollback(const QJsonObject &config,const QString &token);
+    static bool applyBlocking(const QJsonObject &policy, const QString &directory, QString *error);
+    static void rollback(const QJsonObject &config, const QString &token);
 };
-}
+} // namespace siem::fleet

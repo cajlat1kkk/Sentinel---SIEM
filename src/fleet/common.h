@@ -20,4 +20,4 @@ DatabaseConfig databaseConfig(const QJsonObject &config);
 QString validateEndpointPolicy(const QJsonObject &policy);
 QJsonObject defaultEndpointPolicy();
 QString nativeBackend();
-}
+} // namespace siem::fleet

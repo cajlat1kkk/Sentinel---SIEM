@@ -51,6 +51,14 @@ jobs:
         run: |
           $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           ./packaging/windows/build.ps1
+      - name: Verify native Windows background service
+        shell: pwsh
+        run: ./scripts/test-windows-service.ps1
+      - name: Verify signed release manifests
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Program Files\Git\usr\bin;$env:PATH"
+          python scripts/test-update.py --build build-windows
       - uses: actions/upload-artifact@v4
         with:
           name: sentinel-windows-x64-installer

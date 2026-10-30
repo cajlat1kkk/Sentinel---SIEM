@@ -36,7 +36,10 @@ Store::Store(const DatabaseConfig &c, QObject *parent)
     db_.setDatabaseName(c.name);
     db_.setUserName(c.user);
     db_.setPassword(c.password);
-    db_.setConnectOptions("connect_timeout=5;application_name=sentinel-siem");
+    QString options = "connect_timeout=5;application_name=sentinel-siem";
+    if (!c.sslMode.isEmpty()) options += ";sslmode=" + c.sslMode;
+    if (!c.sslRootCert.isEmpty()) options += ";sslrootcert=" + c.sslRootCert;
+    db_.setConnectOptions(options);
     if (!db_.open()) {
         auto error = db_.lastError().text();
         db_ = QSqlDatabase();
@@ -128,6 +131,10 @@ qint64 Store::exec(const QString &sql, const QVariantList &args) {
     check(q.exec(), q);
     if (returning)
         return q.next() ? q.value(0).toLongLong() : 0;
+    // QPSQL::lastInsertId() issues SELECT lastval(), which aborts a transaction
+    // if no sequence has been used (for example during schema migrations).
+    if (db_.driverName() == "QPSQL")
+        return 0;
     return q.lastInsertId().toLongLong();
 }
 void Store::atomic(const std::function<void()> &operation) {

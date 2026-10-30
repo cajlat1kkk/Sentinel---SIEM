@@ -28,6 +28,12 @@ class NgfwPage final : public QWidget {
     bool hasUnsavedChanges() const {
         return modified_;
     }
+    void setPolicyEditorOnly() {
+        demo_ = true;
+        apply_->hide();
+        rollback_->hide();
+        showStatus("Настройки для группы компьютеров. Политика отправится агентам после сохранения группы.");
+    }
   signals:
     void notification(const QString &text, bool error);
 

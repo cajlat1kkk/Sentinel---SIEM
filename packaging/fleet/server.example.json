@@ -1,0 +1,15 @@
+{
+  "listen": "127.0.0.1",
+  "port": 7443,
+  "ca": "/secure/deployment-ca.crt",
+  "certificate": "/secure/server.crt",
+  "private_key": "/secure/server.key",
+  "retention_days": 90,
+  "database": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "name": "sentinel",
+    "user": "sentinel",
+    "password_file": "/secure/postgres-password"
+  }
+}

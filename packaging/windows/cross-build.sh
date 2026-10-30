@@ -6,6 +6,7 @@ export SIEM_WINDOWS_SDK=${SIEM_WINDOWS_SDK:-/tmp/siem-windows-sdk}
 export WINEPREFIX="$SIEM_WINDOWS_SDK/wineprefix"
 export WINEDEBUG=${WINEDEBUG:--all}
 qt_host=${SIEM_QT_HOST_PATH:-/usr}
+project_version=$(python3 "$project_root/scripts/version.py")
 for tool in cmake ninja python3 tar zstd x86_64-w64-mingw32-g++ x86_64-w64-mingw32-objdump wine winepath; do
     command -v "$tool" >/dev/null || { printf 'Missing tool: %s\n' "$tool" >&2; exit 1; }
 done
@@ -47,13 +48,13 @@ if [ "${SIEM_WINDOWS_SMOKE:-1}" = 1 ]; then
     cat "$SIEM_WINDOWS_SDK/test-run/ui-results.txt"
 fi
 script_win=$(winepath -w "$project_root/packaging/windows/installer.nsi")
-output_win=$(winepath -w "$project_root/dist/windows/Sentinel-SIEM-0.2.0-windows-x64-setup.exe")
+output_win=$(winepath -w "$project_root/dist/windows/Sentinel-SIEM-$project_version-windows-x64-setup.exe")
 uninstall_win=$(winepath -w "$SIEM_WINDOWS_SDK/uninstall-files.nsh")
 wine "$SIEM_WINDOWS_SDK/sysroot/mingw64/bin/makensis.exe" /V2 \
-    "/DAPPDIR=$portable_win" "/DOUTPUT=$output_win" "/DUNINSTALL_LIST=$uninstall_win" "$script_win"
-python3 - "$project_root/dist/windows" <<'PY'
+    "/DVERSION=$project_version" "/DAPPDIR=$portable_win" "/DOUTPUT=$output_win" "/DUNINSTALL_LIST=$uninstall_win" "$script_win"
+python3 - "$project_root/dist/windows" "$project_version" <<'PY'
 import pathlib, shutil, sys
 root = pathlib.Path(sys.argv[1])
-shutil.make_archive(str(root / 'Sentinel-SIEM-0.2.0-windows-x64-portable'), 'zip', root / 'portable')
+shutil.make_archive(str(root / f'Sentinel-SIEM-{sys.argv[2]}-windows-x64-portable'), 'zip', root / 'portable')
 print('Windows installer and portable ZIP:', root)
 PY

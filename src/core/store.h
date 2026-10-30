@@ -9,6 +9,7 @@
 namespace siem {
 struct DatabaseConfig {
     QString host = "127.0.0.1", name = "sentinel", user = "sentinel", password;
+    QString sslMode, sslRootCert;
     int port = 5432;
 };
 struct Event {

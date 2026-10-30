@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Sentinel Fleet
+Name[ru]=Sentinel — управление компьютерами
+Comment=Native security fleet management console
+Exec=sentinel-siem --fleet-connect
+Icon=sentinel
+Terminal=false
+Categories=System;Security;

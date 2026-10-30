@@ -1,0 +1,7 @@
+{
+  "host": "siem.example.org",
+  "port": 7443,
+  "ca": "/secure/deployment-ca.crt",
+  "certificate": "/secure/analyst.crt",
+  "private_key": "/secure/analyst.key"
+}

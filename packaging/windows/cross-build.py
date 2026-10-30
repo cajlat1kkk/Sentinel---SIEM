@@ -60,7 +60,7 @@ def stage():
         shutil.rmtree(bundle)
     bundle.mkdir(parents=True)
     binaries = []
-    for name in ["sentinel-siem.exe", "siem-firewall-helper.exe"]:
+    for name in ["sentinel-siem.exe", "siem-firewall-helper.exe", "siem-agent.exe", "siem-server.exe", "siem-fleetctl.exe", "siem-update-verify.exe"]:
         target = bundle / name
         shutil.copy2(SDK / "build" / name, target)
         binaries.append(target)

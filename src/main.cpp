@@ -1,5 +1,7 @@
 #include "ui/theme.h"
 #include "ui/window.h"
+#include "ui/fleet_window.h"
+#include <QFileDialog>
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDialog>
@@ -46,6 +48,8 @@ int main(int argc, char **argv) {
     parser.addVersionOption();
     parser.addOption({"demo", "Изолированный деморежим (без PostgreSQL)"});
     parser.addOption({"connect-env", "Подключиться к PostgreSQL из SIEM_DB_* без диалога"});
+    parser.addOption({"fleet", "Подключиться к серверу управления парком ПК", "configuration.json"});
+    parser.addOption({"fleet-connect", "Выбрать профиль подключения к серверу управления"});
     parser.addOption({"smoke-test", "Проверить все страницы и завершить"});
     parser.addOption({"screenshot", "Сохранить снимок окна и завершить", "file"});
     parser.addOption({"theme", "Палитра интерфейса: ember, flow или night", "name"});
@@ -72,6 +76,15 @@ int main(int argc, char **argv) {
     QTemporaryDir demoDir;
     std::unique_ptr<siem::Store> store;
     try {
+        if (parser.isSet("fleet") || parser.isSet("fleet-connect")) {
+            auto path = parser.value("fleet");
+            if (path.isEmpty()) path = QFileDialog::getOpenFileName(nullptr, "Профиль подключения к серверу Sentinel", {}, "JSON (*.json)");
+            if (path.isEmpty()) return 0;
+            siem::FleetWindow window(siem::fleet::readObject(path));
+            window.show();
+            if (parser.isSet("smoke-test")) QTimer::singleShot(10000, &window, [&] { app.exit(window.authenticated() ? 0 : 3); });
+            return app.exec();
+        }
         if (demo) {
             if (!demoDir.isValid())
                 throw std::runtime_error("Cannot create demo directory");

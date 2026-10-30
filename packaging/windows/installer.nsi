@@ -9,6 +9,9 @@ Unicode true
 !ifndef UNINSTALL_LIST
   !error "Define UNINSTALL_LIST as the generated list of owned installation files"
 !endif
+!ifndef VERSION
+  !define VERSION "0.3.0"
+!endif
 Name "Sentinel SIEM"
 OutFile "${OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\Sentinel SIEM"
@@ -39,7 +42,7 @@ Section "Sentinel SIEM" SecMain
   CreateShortcut "$SMPROGRAMS\Sentinel SIEM\Uninstall.lnk" "$INSTDIR\uninstall.exe"
   WriteRegStr HKCU "Software\Sentinel\Installer" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SentinelSIEM" "DisplayName" "Sentinel SIEM"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SentinelSIEM" "DisplayVersion" "0.2.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SentinelSIEM" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SentinelSIEM" "Publisher" "Sentinel SIEM"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SentinelSIEM" "DisplayIcon" "$INSTDIR\sentinel-siem.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SentinelSIEM" "UninstallString" '"$INSTDIR\uninstall.exe"'

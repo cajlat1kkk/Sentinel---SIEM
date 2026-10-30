@@ -1,0 +1,17 @@
+{
+  "server": {
+    "host": "siem.example.org",
+    "port": 7443,
+    "ca": "/secure/deployment-ca.crt",
+    "certificate": "/secure/this-computer.crt",
+    "private_key": "/secure/this-computer.key"
+  },
+  "state_dir": "/var/lib/sentinel-agent",
+  "enrollment_token_file": "/secure/enrollment.token",
+  "manage_firewall": false,
+  "collect_system": true,
+  "syslog_port": 5514,
+  "queue_max_events": 100000,
+  "queue_max_mib": 256,
+  "scan_roots": ["/home"]
+}
