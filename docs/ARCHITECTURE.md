@@ -38,11 +38,11 @@ Scanner работает в QtConcurrent, не обращается к SQL из 
 
 ## Пакетный сенсор
 
-`siem-dpdk` реально связывается с libdpdk, поднимает EAL, mempool, очереди ethdev и вызывает `rte_eth_rx_burst`. В inline вызывает `rte_eth_tx_burst` в парный порт. Мониторинг освобождает mbuf после анализа. Метаданные и счётчики идут JSONL через stdout, диагностика EAL — stderr.
+`siem-dpdk` реально связывается с libdpdk, поднимает EAL, mempool, очереди ethdev и вызывает `rte_eth_rx_burst`. GUI при старте сам подключается к VPP и запускает сенсор: на свободном порту `vfio-pci` — в режиме мониторинга, при занятом порте — на встроенном PCAP-примере с `--no-events` (без записи в рабочую БД). В inline вызывает `rte_eth_tx_burst` в парный порт. Мониторинг освобождает mbuf после анализа. Метаданные и счётчики идут JSONL через stdout, диагностика EAL — stderr.
 
 Разбираются Ethernet, до двух VLAN tags, IPv4/IPv6 с ограниченными цепочками extension headers, TCP/UDP и Ethernet/IPv4 ARP. HTTP-сигнатуры проверяются в первых 8 КБ payload одного пакета после percent-decoding. Нет TCP/IP reassembly, conntrack, TLS MITM, flow classification, fail-open hardware bypass. Метки в UI отражают только успешно запущенный процесс/полученный ответ.
 
-VPP adapter выполняет только `vppctl -s SOCKET show interface`, с тайм-аутом 5 секунд. Состояние показывается как снимок по запросу, производные вымышленные rates отсутствуют.
+VPP adapter выполняет только `vppctl -s SOCKET show hardware-interfaces`, с тайм-аутом 5 секунд. Состояние показывается как снимок по запросу, производные вымышленные rates отсутствуют.
 
 ## Официальные справочники
 

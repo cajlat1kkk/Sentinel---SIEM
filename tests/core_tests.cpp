@@ -305,6 +305,48 @@ class CoreTests : public QObject {
         QCOMPARE(result.findings.first().path, file.fileName());
         QCOMPARE(result.findings.first().sha256, Scanner::hashFile(file.fileName()));
     }
+    void engineVppParsing() {
+        const QString output = QStringLiteral(
+            "              Name                Idx   Link  Hardware\n"
+            "GigabitEthernet4/0/0               1    up    GigabitEthernet4/0/0\n"
+            "  Ethernet address c0:18:50:fb:0e:36\n"
+            "  ### UNKNOWN ###\n"
+            "    pci: device 10ec:8168 subsystem 152d:1513 address 0000:04:00.00 numa 0\n"
+            "    rx burst function: dummy_eth_rx_burst\n"
+            "local0                             0    down  local0\n");
+        const auto summary = Engines::parseVppInterfaces(output);
+        QCOMPARE(summary["total"].toInt(), 2);
+        QCOMPARE(summary["up"].toInt(), 1);
+        QCOMPARE(Engines::vppPciAddresses(output), QStringList{"0000:04:00.0"});
+        QCOMPARE(Engines::pciAddresses("-l 1 --no-telemetry -a 0000:04:00.0 -a0000:05:00.1"),
+                 (QStringList{"0000:04:00.0", "0000:05:00.1"}));
+        QTemporaryDir dir;
+        Store store(dir.filePath("engine.db"));
+        Engines engines(store);
+        engines.vppOutput = output;
+        QString used;
+        QVERIFY(engines.portUsedByVpp({"-a", "0000:04:00.0"}, &used));
+        QCOMPARE(used, QString("0000:04:00.0"));
+        QVERIFY(!engines.portUsedByVpp({"-a", "0000:05:00.0"}));
+    }
+#ifndef Q_OS_WIN
+    void enginePortDiscovery() {
+        QTemporaryDir dir;
+        QDir root(dir.path());
+        QVERIFY(root.mkpath("0000:04:00.0/iommu_group"));
+        QVERIFY(root.mkpath("vfio-pci"));
+        QFile classFile(root.filePath("0000:04:00.0/class"));
+        QVERIFY(classFile.open(QIODevice::WriteOnly));
+        classFile.write("0x020000\n");
+        classFile.close();
+        QVERIFY(QFile::link(root.filePath("vfio-pci"), root.filePath("0000:04:00.0/driver")));
+        const auto ports = Engines::discoverPorts(dir.path());
+        QCOMPARE(ports.size(), 1);
+        QCOMPARE(ports.first().bdf, QString("0000:04:00.0"));
+        QCOMPARE(ports.first().driver, QString("vfio-pci"));
+        QVERIFY(ports.first().iommu);
+    }
+#endif
     void postgres() {
         if (qEnvironmentVariableIsEmpty("SIEM_TEST_PG_PORT"))
             QSKIP("Set SIEM_TEST_PG_PORT for an isolated PostgreSQL integration test");

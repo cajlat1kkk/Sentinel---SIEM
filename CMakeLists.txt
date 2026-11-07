@@ -42,6 +42,12 @@ if(MSVC)
 endif()
 add_executable(sentinel-siem WIN32 src/main.cpp src/ui/window.cpp src/ui/chart.cpp src/ui/visuals.cpp src/ui/theme.cpp src/ui/ngfw_page.cpp src/ui/fleet_window.cpp assets/assets.qrc)
 target_link_libraries(sentinel-siem PRIVATE siem_fleet Qt6::Widgets)
+# The GUI auto-starts the DPDK sensor on a bundled PCAP sample when no free NIC exists.
+add_custom_command(TARGET sentinel-siem POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:sentinel-siem>/samples"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_CURRENT_SOURCE_DIR}/samples/http-lab.pcap"
+          "$<TARGET_FILE_DIR:sentinel-siem>/samples/http-lab.pcap")
 add_executable(siem-firewall-helper src/firewall_helper.cpp)
 target_link_libraries(siem-firewall-helper PRIVATE siem_core)
 if(WIN32)
@@ -115,8 +121,8 @@ if(SIEM_BUILD_TESTS)
   add_test(NAME ui-profiles COMMAND siem-ui-tests)
   set_tests_properties(ui-profiles PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
   add_test(NAME core COMMAND siem-tests)
-  add_test(NAME desktop-smoke COMMAND sentinel-siem --demo --smoke-test)
-  add_test(NAME desktop-night-smoke COMMAND sentinel-siem --demo --theme night --smoke-test)
+  add_test(NAME desktop-smoke COMMAND sentinel-siem --demo --no-engines --smoke-test)
+  add_test(NAME desktop-night-smoke COMMAND sentinel-siem --demo --theme night --no-engines --smoke-test)
   set_tests_properties(desktop-smoke desktop-night-smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
 endif()
 set(CPACK_PACKAGE_NAME "sentinel-siem")

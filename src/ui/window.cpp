@@ -12,6 +12,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHeaderView>
@@ -549,6 +550,11 @@ Window::Window(Store &s, bool demo)
                                                          : settings_.value("ui/theme", "ember").toString());
     if (!demo_ && settings_.value("collector/enabled", false).toBool())
         startCollector();
+    // Probe the local VPP socket immediately and refresh it in the background.
+    if (!qApp->property("enginesDisabled").toBool()) {
+        engines_.startVppMonitoring(settings_.value("vpp/socket", "/run/vpp/cli.sock").toString(), 15000);
+        QTimer::singleShot(800, this, &Window::autoStartEngines);
+    }
 }
 
 QWidget *Window::dashboard() {
@@ -1020,11 +1026,42 @@ QWidget *Window::enginesPage() {
                        "muted");
     desc->setWordWrap(true);
     dl->addWidget(desc);
-    ealArgs_ = new QLineEdit(settings_.value("dpdk/eal", "-l 0 --no-telemetry -a 0000:03:00.0").toString());
+    QString savedEal = settings_.value("dpdk/eal").toString().trimmed();
+    const auto knownPorts = Engines::discoverPorts();
+    for (const auto &bdf : Engines::pciAddresses(savedEal)) {
+        bool known = false;
+        for (const auto &port : knownPorts) {
+            if (port.bdf == bdf) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            savedEal.clear();
+            settings_.remove("dpdk/eal");
+            break;
+        }
+    }
+    ealArgs_ = new QLineEdit(savedEal);
+    ealArgs_->setPlaceholderText("например: -l 1 --no-telemetry -a 0000:04:00.0");
     dl->addWidget(ealArgs_);
+    portHint_ = label("", "muted");
+    portHint_->setWordWrap(true);
+    dl->addWidget(portHint_);
     auto *db = new QHBoxLayout;
     inlineMode_ = new QCheckBox("Inline: 2 порта, блокировка L3/L4 + HTTP-сигнатур");
     db->addWidget(inlineMode_);
+    autostartEngines_ = new QCheckBox("Автозапуск движков при старте");
+    autostartEngines_->setChecked(settings_.value("engines/autostart", true).toBool());
+    autostartEngines_->setEnabled(!qApp->property("enginesDisabled").toBool());
+    autostartEngines_->setToolTip(
+        "Подключиться к VPP и запустить DPDK-сенсор: PCAP-пример, если порт занят VPP, иначе живой захват.");
+    db->addWidget(autostartEngines_);
+    connect(autostartEngines_, &QCheckBox::toggled, this, [this](bool on) {
+        settings_.setValue("engines/autostart", on);
+        if (on)
+            autoStartEngines();
+    });
     db->addStretch();
     auto *pcap = button("Открыть PCAP"), *run = button("Запустить", "primary"), *stop = button("Остановить");
     for (auto *b : {pcap, run, stop})
@@ -1047,11 +1084,51 @@ QWidget *Window::enginesPage() {
     vb->addWidget(vppSocket_, 1);
     auto *poll = button("Получить состояние", "primary");
     vb->addWidget(poll);
+    auto *raise = button("Поднять интерфейсы");
+    vb->addWidget(raise);
     connect(poll, &QPushButton::clicked, this, [this] {
         settings_.setValue("vpp/socket", vppSocket_->text());
-        engines_.pollVpp(vppSocket_->text());
+        engines_.startVppMonitoring(vppSocket_->text(), 15000);
+    });
+    connect(raise, &QPushButton::clicked, this, [this] {
+        if (!engines_.vppConnected) {
+            notify("Сначала подключитесь к VPP", true);
+            return;
+        }
+        const auto summary = Engines::parseVppInterfaces(engines_.vppOutput);
+        QStringList names;
+        for (const auto &value : summary["names"].toArray()) {
+            const auto name = value.toString();
+            if (!name.isEmpty() && name != "local0")
+                names << name;
+        }
+        if (names.isEmpty()) {
+            notify("VPP не сообщил интерфейсов для изменения", true);
+            return;
+        }
+        if (QMessageBox::question(this, "VPP",
+                                  "Поднять интерфейсы VPP:\n" + names.join(", ") + "?") !=
+            QMessageBox::Yes)
+            return;
+        const auto bin = QStandardPaths::findExecutable("vppctl");
+        if (bin.isEmpty()) {
+            notify("vppctl не найден", true);
+            return;
+        }
+        int changed = 0;
+        for (const auto &name : names) {
+            if (QProcess::execute(bin, {"-s", vppSocket_->text(), "set", "interface", "state", name, "up"}) ==
+                0)
+                ++changed;
+        }
+        notify(QString("Поднято интерфейсов: %1 из %2").arg(changed).arg(names.size()),
+               changed != names.size());
+        engines_.startVppMonitoring(vppSocket_->text(), 15000);
     });
     vl->addLayout(vb);
+    vppHint_ = label("Состояние VPP обновляется автоматически каждые 15 секунд.", "muted");
+    vppHint_->setWordWrap(true);
+    vl->addWidget(vppHint_);
     vl->addWidget(label("VPP управляет собственными портами. Не назначайте один PCI-порт одновременно VPP и "
                         "отдельному DPDK-сенсору.",
                         "muted"));
@@ -1321,7 +1398,11 @@ void Window::refreshData() {
         }
         chart_->setValues(values, labels);
         moduleStates_[0]->setText(scanner_.busy() ? "Проверка…" : "По запросу");
-        moduleStates_[1]->setText(engines_.dpdkRunning ? "Активен" : "Не запущен");
+        moduleStates_[1]->setText(engines_.dpdkRunning
+                                    ? (engines_.dpdkSource == "PCAP"        ? "Активен · PCAP"
+                                       : engines_.dpdkSource == "PCAP-probe" ? "Активен · демо"
+                                                                            : "Активен")
+                                    : "Не запущен");
         moduleStates_[2]->setText(
             QString("%1 правил").arg(store_.scalar("SELECT COUNT(*) FROM rules WHERE enabled=1").toInt()));
         moduleStates_[3]->setText(ngfw_->wasAppliedHere() ? "Применялось" : "Настроить");
@@ -1334,13 +1415,63 @@ void Window::refreshEngines() {
         return;
     dpdkState_->setText(engines_.dpdkStatus);
     vppState_->setText(engines_.vppStatus);
-    dpdkBadge_->setText(engines_.dpdkRunning ? "DPDK · работает" : "DPDK · остановлен");
+    dpdkBadge_->setText(engines_.dpdkRunning
+                            ? (engines_.dpdkSource == "PCAP"        ? "DPDK · PCAP"
+                               : engines_.dpdkSource == "PCAP-probe" ? "DPDK · PCAP (демо)"
+                               : engines_.dpdkSource == "inline"     ? "DPDK · inline"
+                                                                     : "DPDK · работает")
+                            : "DPDK · остановлен");
     vppBadge_->setText(engines_.vppConnected ? "VPP · подключён" : "VPP · нет связи");
     auto stats = engines_.stats;
     if (!stats.isEmpty()) {
         dpdkPackets_->setText(QLocale().toString(qint64(stats["packets"].toDouble())));
         dpdkBytes_->setText(QString("%1 МБ").arg(stats["bytes"].toDouble() / 1048576, 0, 'f', 2));
         dpdkDrops_->setText(QString::number(qint64(stats["dropped"].toDouble())));
+    }
+    const bool enginesDisabled = qApp->property("enginesDisabled").toBool();
+    if (ealArgs_ && ealArgs_->text().trimmed().isEmpty() && !enginesDisabled) {
+        const auto suggested = engines_.suggestedEalArgs();
+        ealArgs_->setPlaceholderText(suggested.isEmpty()
+                                         ? QStringLiteral("например: -l 1 --no-telemetry -a 0000:04:00.0")
+                                         : QStringLiteral("Авто: ") + suggested);
+    }
+    if (vppHint_ && enginesDisabled) {
+        vppHint_->setText("Автоподключение отключено (--no-engines). Нажмите «Получить состояние» для "
+                          "разовой проверки.");
+    } else if (vppHint_) {
+        if (!engines_.vppConnected)
+            vppHint_->setText("VPP не отвечает. Проверьте службу vpp, vppctl и путь к CLI-сокету.");
+        else {
+            const auto summary = Engines::parseVppInterfaces(engines_.vppOutput);
+            if (summary["total"].toInt() > 0 && summary["up"].toInt() == 0)
+                vppHint_->setText("VPP подключён, но ни один интерфейс не имеет link up (carrier down). "
+                                  "Проверьте кабель/SPAN или поднимите интерфейс через vppctl.");
+            else
+                vppHint_->setText("Состояние VPP обновляется автоматически каждые 15 секунд.");
+        }
+    }
+    if (portHint_ && enginesDisabled) {
+        portHint_->setText("Автоподключение движков отключено (--no-engines).");
+    } else if (portHint_) {
+        const auto busy = engines_.vppPorts();
+        const auto signature = (engines_.vppConnected ? QString("1|") : QString("0|")) + busy.join(',');
+        if (portHint_->property("signature").toString() != signature) {
+            portHint_->setProperty("signature", signature);
+            QStringList free;
+            for (const auto &port : Engines::discoverPorts()) {
+                if (port.driver == "vfio-pci" && port.iommu && !busy.contains(port.bdf))
+                    free << port.bdf;
+            }
+            if (!free.isEmpty())
+                portHint_->setText("Свободные DPDK-порты (vfio-pci): " + free.join(", "));
+            else if (!busy.isEmpty())
+                portHint_->setText(QString("Свободных DPDK-портов нет: %1 занят VPP. Используйте PCAP или "
+                                           "остановите VPP.")
+                                       .arg(busy.join(", ")));
+            else
+                portHint_->setText(
+                    "Нет Ethernet-портов на vfio-pci. Привяжите NIC к vfio-pci или используйте PCAP.");
+        }
     }
     engineLog_->setPlainText("DPDK\n" + QString::fromUtf8(QJsonDocument(stats).toJson()) + "\n" +
                              engines_.diagnostics + "\nVPP\n" + engines_.vppOutput);
@@ -1639,51 +1770,130 @@ void Window::startCollector() {
     } else
         notify(error, true);
 }
-void Window::startSensor(bool pcap) {
-    QStringList args;
-    if (pcap) {
-        auto path = QFileDialog::getOpenFileName(this, "Открыть захват", {}, "PCAP (*.pcap);;Все файлы (*)");
-        if (path.isEmpty())
-            return;
-        args = {"--pcap", path, "--seconds", "5"};
-    } else {
-        if (QMessageBox::warning(
-                this, "Запуск DPDK",
-                inlineMode_->isChecked()
-                    ? "Inline требует двух выделенных портов и перенаправляет трафик между ними. Сигнатуры "
-                      "HTTP блокируются, правила берутся из сохранённого профиля DPDK. Запустить?"
-                    : "Мониторинг потребляет пакеты выбранных портов. Используйте выделенный "
-                      "SPAN/TAP-интерфейс. Запустить?",
-                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
-            return;
-        if (inlineMode_->isChecked())
-            args << "--inline";
-        args << "--";
-        args += QProcess::splitCommand(ealArgs_->text());
-        if (!demo_)
-            settings_.setValue("dpdk/eal", ealArgs_->text());
+QString Window::samplePcap() const {
+    const QStringList candidates{
+        QCoreApplication::applicationDirPath() + "/samples/http-lab.pcap",
+        QDir::currentPath() + "/samples/http-lab.pcap",
+        QCoreApplication::applicationDirPath() + "/../share/doc/sentinel-siem/samples/http-lab.pcap",
+        QStringLiteral("/usr/share/doc/sentinel-siem/samples/http-lab.pcap")};
+    for (const auto &candidate : candidates) {
+        const QFileInfo info(candidate);
+        if (info.exists() && info.isFile())
+            return info.absoluteFilePath();
+    }
+    return {};
+}
+bool Window::launchSensor(const QStringList &args) {
+    if (engines_.busy()) {
+        notify("DPDK-сенсор уже запущен. Остановите его перед сменой режима.", true);
+        return false;
     }
     const auto policy = ngfw_->savedDpdkPolicy();
     const auto error = validateDpdkPolicy(policy);
     if (!error.isEmpty()) {
         notify(error, true);
-        return;
+        return false;
     }
-    sensorPolicy_ = std::make_unique<QTemporaryFile>();
-    if (!sensorPolicy_->open()) {
-        notify(sensorPolicy_->errorString(), true);
-        sensorPolicy_.reset();
-        return;
+    auto policyFile = std::make_unique<QTemporaryFile>();
+    if (!policyFile->open()) {
+        notify(policyFile->errorString(), true);
+        return false;
     }
     const auto bytes = QJsonDocument(policy).toJson();
-    if (sensorPolicy_->write(bytes) != bytes.size() || !sensorPolicy_->flush()) {
+    if (policyFile->write(bytes) != bytes.size() || !policyFile->flush()) {
         notify("Не удалось записать профиль сенсора", true);
-        sensorPolicy_.reset();
+        return false;
+    }
+    QStringList full = args;
+    full.prepend(policyFile->fileName());
+    full.prepend("--policy");
+    if (!engines_.startDpdk(full)) {
+        notify("Не удалось запустить DPDK-сенсор", true);
+        return false;
+    }
+    sensorPolicy_ = std::move(policyFile);
+    return true;
+}
+void Window::autoStartEngines() {
+    if (qApp->property("enginesDisabled").toBool())
+        return;
+    if (!settings_.value("engines/autostart", true).toBool())
+        return;
+    if (engines_.busy())
+        return;
+    // Wait until the first VPP poll has populated the list of busy PCI ports.
+    if (engines_.vppPolling() && engineRetry_ < 20) {
+        ++engineRetry_;
+        QTimer::singleShot(400, this, &Window::autoStartEngines);
         return;
     }
-    args.prepend(sensorPolicy_->fileName());
-    args.prepend("--policy");
-    engines_.startDpdk(args);
+    engineRetry_ = 0;
+    const auto suggested = engines_.suggestedEalArgs();
+    const auto pcap = samplePcap();
+    if (demo_ || suggested.isEmpty()) {
+        if (pcap.isEmpty()) {
+            engines_.setStatus("Автозапуск: PCAP-пример не найден");
+            return;
+        }
+        QStringList probe{"--pcap", pcap, "--seconds", "0"};
+        if (!demo_)
+            probe << "--no-events";
+        launchSensor(probe);
+        return;
+    }
+    QStringList args{"--"};
+    args += QProcess::splitCommand(suggested);
+    launchSensor(args);
+}
+void Window::startSensor(bool pcap) {
+    if (pcap) {
+        auto path = QFileDialog::getOpenFileName(this, "Открыть захват", {}, "PCAP (*.pcap);;Все файлы (*)");
+        if (path.isEmpty())
+            return;
+        launchSensor({"--pcap", path, "--seconds", "0"});
+        return;
+    }
+    if (engines_.busy()) {
+        notify("DPDK-сенсор уже запущен. Остановите его перед сменой режима.", true);
+        return;
+    }
+    auto text = ealArgs_->text().trimmed();
+    if (text.isEmpty())
+        text = engines_.suggestedEalArgs();
+    if (text.isEmpty()) {
+        QMessageBox::information(
+            this, "Нет свободного DPDK-порта",
+            "Все Ethernet-порты, привязанные к vfio-pci, уже заняты (например, VPP).\n\n"
+            "Остановите VPP и обновите список портов либо откройте PCAP для демонстрации сенсора.");
+        return;
+    }
+    const auto parts = QProcess::splitCommand(text);
+    QString used;
+    if (engines_.portUsedByVpp(parts, &used)) {
+        QMessageBox::warning(
+            this, "Порт занят VPP",
+            QString("Порт %1 уже захвачен VPP. Один PCI-порт не может одновременно принадлежать VPP и "
+                    "DPDK-сенсору. Остановите VPP или используйте PCAP.")
+                .arg(used));
+        return;
+    }
+    if (QMessageBox::warning(
+            this, "Запуск DPDK",
+            inlineMode_->isChecked()
+                ? "Inline требует двух выделенных портов и перенаправляет трафик между ними. Сигнатуры "
+                  "HTTP блокируются, правила берутся из сохранённого профиля DPDK. Запустить?"
+                : "Мониторинг потребляет пакеты выбранных портов. Используйте выделенный "
+                  "SPAN/TAP-интерфейс. Запустить?",
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    QStringList args;
+    if (inlineMode_->isChecked())
+        args << "--inline";
+    args << "--";
+    args += parts;
+    if (!demo_)
+        settings_.setValue("dpdk/eal", text);
+    launchSensor(args);
 }
 void Window::closeEvent(QCloseEvent *event) {
     if (ngfw_->isApplying()) {

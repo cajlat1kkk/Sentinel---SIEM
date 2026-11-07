@@ -1,0 +1,47 @@
+digraph Sentinel {
+  graph [rankdir=LR, fontname="DejaVu Sans", fontsize=12, bgcolor="white", pad=0.3,
+         nodesep=0.22, ranksep=0.75];
+  node [shape=box, style="rounded,filled", fontname="DejaVu Sans", fontsize=9.5,
+        fillcolor="#f7f5f0", color="#9a96a3", penwidth=1.0, margin="0.14,0.06"];
+  edge [color="#8d8995", arrowsize=0.6, penwidth=0.9];
+
+  root [label="Sentinel SIEM 0.3.0\nC++20 · Qt 6 Widgets · PostgreSQL", fillcolor="#ded7f0",
+        fontsize=11, penwidth=1.4];
+
+  gui  [label="Desktop GUI\nsentinel-siem", fillcolor="#e8e2f6", fontsize=10];
+  win  [label="Window\n10 разделов · 3 темы"];
+  ngfw [label="NgfwPage\nпрофили Linux / DPDK / Windows"];
+  fleetwin [label="FleetWindow\nпарк ПК · политики · аудит"];
+  viz  [label="Chart · Visuals · Theme\nEmber / Flow / Night"];
+
+  core [label="siem_core\nстатическая библиотека", fillcolor="#e3eee6", fontsize=10];
+  store  [label="Store\nсхема · SQL · корреляция · аудит"];
+  coll   [label="Collector\nUDP syslog · JSONL · Suricata EVE"];
+  scan   [label="Scanner\nSHA-256 · EICAR · ClamAV · карантин"];
+  fwcore [label="firewall\nвалидация и компиляция политик"];
+  pkt    [label="packet\nL2–L4 · HTTP-сигнатуры"];
+
+  fleet [label="siem_fleet\nстатическая библиотека", fillcolor="#e8eef7", fontsize=10];
+  trans [label="transport\nRpcClient / RpcServer · mutual TLS"];
+  repos [label="Repository\nроли · устройства · RPC-методы"];
+  agentm [label="Agent\nсбор · очередь · задания · сканы"];
+  policy [label="PolicyController\nприменение · watchdog 90 с"];
+  queue [label="Queue\nSQLite spool"];
+
+  net   [label="Сетевые компоненты", fillcolor="#f7ece1", fontsize=10];
+  engines [label="Engines\nQProcess: DPDK + vppctl"];
+  dpdk    [label="siem-dpdk\nEAL · ethdev RX/TX · PCAP PMD"];
+
+  infra [label="Инфраструктура\nсборка · тесты · поставка", fillcolor="#f1f0ec", fontsize=10];
+  cmake [label="CMake\n2 libs · 7 бинарников · 3 теста"];
+  pack  [label="packaging\nDEB · Arch · MSVC/NSIS · MinGW"];
+  scripts [label="scripts\nPKI · подпись · интеграционные тесты"];
+  ci    [label="GitHub Actions\nLinux + Windows"];
+
+  root -> gui;   root -> core;  root -> fleet; root -> net; root -> infra;
+  gui -> win;    gui -> ngfw;   gui -> fleetwin; gui -> viz;
+  core -> store; core -> coll;  core -> scan;  core -> fwcore; core -> pkt;
+  fleet -> trans; fleet -> repos; fleet -> agentm; fleet -> policy; fleet -> queue;
+  net -> engines; net -> dpdk;
+  infra -> cmake; infra -> pack; infra -> scripts; infra -> ci;
+}

@@ -47,11 +47,11 @@ class Window : public QMainWindow {
     QTableWidget *events_, *alerts_, *incidents_, *assets_, *latest_, *rules_, *findings_, *quarantine_,
         *audit_;
     QList<QLabel *> metrics_, moduleStates_;
-    QLabel *dpdkPackets_, *dpdkBytes_, *dpdkDrops_, *dpdkBadge_, *vppBadge_;
+    QLabel *dpdkPackets_, *dpdkBytes_, *dpdkDrops_, *dpdkBadge_, *vppBadge_, *portHint_, *vppHint_;
     Chart *chart_;
     QTextEdit *engineLog_, *reportPreview_;
     QSpinBox *syslogPort_;
-    QCheckBox *watchScan_, *inlineMode_, *autoCollect_;
+    QCheckBox *watchScan_, *inlineMode_, *autoCollect_, *autostartEngines_;
     QList<QPushButton *> nav_;
     QMap<int, QPushButton *> topNav_;
     QPushButton *emberTheme_, *flowTheme_, *nightTheme_;
@@ -69,6 +69,7 @@ class Window : public QMainWindow {
     QFileSystemWatcher watcher_;
     QTimer refresh_, watchDebounce_;
     bool dirty_ = true;
+    int engineRetry_ = 0;
     std::unique_ptr<QTemporaryFile> sensorPolicy_;
     QWidget *dashboard();
     QWidget *eventsPage(bool alerts);
@@ -95,6 +96,9 @@ class Window : public QMainWindow {
     void saveReport(bool json);
     void startCollector();
     void startSensor(bool pcap);
+    bool launchSensor(const QStringList &args);
+    void autoStartEngines();
+    QString samplePcap() const;
     QString since() const;
     void notify(const QString &message, bool error = false);
     qint64 selected(QTableWidget *table) const;

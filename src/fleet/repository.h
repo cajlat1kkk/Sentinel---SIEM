@@ -14,5 +14,6 @@ class Repository final {
     QJsonObject enroll(const QString &identity, const QJsonObject &params);
     QJsonObject poll(const QString &identity, const QJsonObject &params);
     QJsonObject policy(const QString &group) const;
+    QString ownHostname(const QString &identity) const;
 };
 } // namespace siem::fleet

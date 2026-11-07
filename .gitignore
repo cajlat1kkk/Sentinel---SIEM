@@ -40,4 +40,5 @@ __pycache__/
 .venv/
 .idea/
 .vscode/
-.docs
+docs/VPP_DPDK_R8169.md
+

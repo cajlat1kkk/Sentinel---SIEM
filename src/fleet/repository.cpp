@@ -41,14 +41,20 @@ Repository::Repository(Store &s) : store_(s) {
         store_.exec(
             "INSERT INTO schema_migrations(version,applied) VALUES(2,?) ON CONFLICT(version) DO NOTHING",
             {now()});
+        store_.exec(
+            "INSERT INTO schema_migrations(version,applied) VALUES(3,?) ON CONFLICT(version) DO NOTHING",
+            {now()});
+        // Every enrolled device is also an operator with the least-privileged role 'user'. The admin can
+        // promote it later (operators.setrole). This backfill is idempotent and never un-revokes anyone.
+        store_.exec("INSERT INTO fleet_operators(identity,name,role,revoked) "
+                    "SELECT identity,hostname,'user',0 FROM fleet_devices WHERE revoked=0 "
+                    "ON CONFLICT(identity) DO NOTHING");
     });
 }
 void Repository::addOperator(const QString &id, const QString &name, const QString &role) {
     require(fingerprintValid(id) && !name.isEmpty() && name.size() <= 128 &&
-                QStringList{"admin", "analyst"}.contains(role),
+                QStringList{"user", "analyst", "admin"}.contains(role),
             "Invalid operator");
-    require(!store_.scalar("SELECT identity FROM fleet_devices WHERE identity=?", {id}).isValid(),
-            "Device certificate cannot be an operator");
     store_.atomic([&] {
         store_.exec("INSERT INTO fleet_operators(identity,name,role) VALUES(?,?,?) ON CONFLICT(identity) DO "
                     "UPDATE SET name=excluded.name,role=excluded.role,revoked=0",
@@ -67,14 +73,17 @@ QJsonObject Repository::policy(const QString &group) const {
             {"token", group + ":" + r[0]["revision"].toString()},
             {"policy", QJsonDocument::fromJson(r[0]["policy"].toString().toUtf8()).object()}};
 }
+
+QString Repository::ownHostname(const QString &identity) const {
+    auto r = store_.rows("SELECT hostname FROM fleet_devices WHERE identity=? AND revoked=0", {identity});
+    return r.isEmpty() ? QString() : r[0]["hostname"].toString();
+}
 QJsonObject Repository::enroll(const QString &id, const QJsonObject &p) {
     auto device = store_.rows("SELECT revoked FROM fleet_devices WHERE identity=?", {id});
     if (!device.isEmpty()) {
         require(!device[0]["revoked"].toBool(), "Device revoked");
         return {{"enrolled", true}, {"identity", id}};
     }
-    require(!store_.scalar("SELECT identity FROM fleet_operators WHERE identity=?", {id}).isValid(),
-            "Operator certificate cannot enroll as a device");
     const auto token = p["token"].toString();
     const auto host = p["hostname"].toString();
     const auto platform = p["platform"].toString();
@@ -90,6 +99,10 @@ QJsonObject Repository::enroll(const QString &id, const QJsonObject &p) {
         store_.exec("INSERT INTO fleet_devices(identity,hostname,platform,group_name,enrolled,last_seen) "
                     "VALUES(?,?,?,?,?,?)",
                     {id, host, platform, rows[0]["group_name"], now(), now()});
+        // A connected PC starts as the least-privileged 'user' operator; the admin promotes it later.
+        store_.exec("INSERT INTO fleet_operators(identity,name,role) VALUES(?,?,'user') "
+                    "ON CONFLICT(identity) DO NOTHING",
+                    {id, host});
         audit(id, "device.enroll", {{"hostname", host}, {"platform", platform}});
     });
     return {{"enrolled", true}, {"identity", id}};

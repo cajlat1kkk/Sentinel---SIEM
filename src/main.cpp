@@ -53,11 +53,13 @@ int main(int argc, char **argv) {
     parser.addOption({"smoke-test", "Проверить все страницы и завершить"});
     parser.addOption({"screenshot", "Сохранить снимок окна и завершить", "file"});
     parser.addOption({"theme", "Палитра интерфейса: ember, flow или night", "name"});
+    parser.addOption({"no-engines", "Не подключаться к VPP и не запускать DPDK автоматически"});
     parser.addOption({"page",
                       "Открыть раздел: overview, alerts, incidents, events, assets, ngfw, antivirus, "
                       "network, reports, settings",
                       "name", "overview"});
     parser.process(app);
+    qApp->setProperty("enginesDisabled", parser.isSet("no-engines"));
     const QStringList pageNames{"overview", "alerts",    "incidents", "events",  "assets",
                                 "ngfw",     "antivirus", "network",   "reports", "settings"};
     const int initialPage = pageNames.indexOf(parser.value("page"));
@@ -173,7 +175,7 @@ int main(int argc, char **argv) {
         window.show();
         window.navigate(initialPage);
         if (parser.isSet("smoke-test") || parser.isSet("screenshot"))
-            QTimer::singleShot(400, &window, [&] {
+            QTimer::singleShot(parser.isSet("screenshot") ? 1800 : 400, &window, [&] {
                 bool ok = window.smokeTest(parser.value("screenshot"), initialPage);
                 app.exit(ok ? 0 : 3);
             });

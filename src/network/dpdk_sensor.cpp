@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     QStringList args = app.arguments(), eal;
     QString pcap, policy;
-    bool bridge = false;
+    bool bridge = false, noEvents = false;
     int seconds = 0;
     for (int i = 1; i < args.size(); ++i) {
         if (args[i] == "--") {
@@ -40,6 +40,10 @@ int main(int argc, char **argv) {
         }
         if (args[i] == "--inline") {
             bridge = true;
+            continue;
+        }
+        if (args[i] == "--no-events") {
+            noEvents = true;
             continue;
         }
         if (args[i] == "--pcap" && i + 1 < args.size()) {
@@ -58,7 +62,7 @@ int main(int argc, char **argv) {
             continue;
         }
         return failure(
-            "Usage: siem-dpdk [--pcap file] [--inline --policy rules.json] [--seconds N] -- EAL arguments");
+            "Usage: siem-dpdk [--pcap file] [--inline --policy rules.json] [--seconds N] [--no-events] -- EAL arguments");
     }
     auto configuration = siem::defaultFirewallPolicy();
     configuration["stateful"] = false;
@@ -103,6 +107,8 @@ int main(int argc, char **argv) {
                "--no-pci",
                "--no-shconf",
                "--no-telemetry",
+               "--file-prefix",
+               QString("sentinel-pcap-%1").arg(QCoreApplication::applicationPid()),
                "--vdev=net_pcap0,rx_pcap=" + pcap};
     }
     if (eal.isEmpty())
@@ -192,7 +198,7 @@ int main(int argc, char **argv) {
                 if (!packet.signature.isEmpty())
                     ++alerts;
                 if (packet.valid) {
-                    if (emitted < 500) {
+                    if (!noEvents && emitted < 500) {
                         auto ev = siem::packetEvent(packet);
                         ev["blocked"] = blocked;
                         if (!reason.isEmpty())
