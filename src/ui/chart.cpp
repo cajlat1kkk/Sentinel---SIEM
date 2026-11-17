@@ -1,4 +1,5 @@
 #include "chart.h"
+#include <QCoreApplication>
 #include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>
@@ -10,7 +11,7 @@ namespace siem {
 Chart::Chart(QWidget *parent) : QWidget(parent) {
     setMinimumHeight(190);
     setMouseTracking(true);
-    setAccessibleName("График полученных событий безопасности");
+    setAccessibleName(QCoreApplication::translate("Chart", "График полученных событий безопасности"));
 }
 void Chart::setValues(const QList<double> &values, const QStringList &labels) {
     values_ = values;
@@ -56,8 +57,7 @@ void Chart::paintEvent(QPaintEvent *) {
     const QColor accent(night_ ? "#c1a0ed" : lavender_ ? "#9b89d0" : "#ee8651");
     for (int i = 0; i <= 4; ++i) {
         double y = plot.bottom() - plot.height() * i / 4;
-        p.setPen(QPen(QColor(night_ ? (i ? "#30394c" : "#46516a")
-                                   : (i ? "#f1eff2" : "#e9e6eb")), 1));
+        p.setPen(QPen(QColor(night_ ? (i ? "#30394c" : "#46516a") : (i ? "#f1eff2" : "#e9e6eb")), 1));
         p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
         p.setPen(muted);
         p.drawText(QRectF(0, y - 8, 28, 16), Qt::AlignRight | Qt::AlignVCenter,
@@ -65,7 +65,8 @@ void Chart::paintEvent(QPaintEvent *) {
     }
     if (values_.isEmpty()) {
         p.setPen(muted);
-        p.drawText(plot, Qt::AlignCenter, "События за период ещё не поступали");
+        p.drawText(plot, Qt::AlignCenter,
+                   QCoreApplication::translate("Chart", "События за период ещё не поступали"));
         return;
     }
     const int count = int(values_.size());
@@ -129,8 +130,7 @@ void Chart::paintEvent(QPaintEvent *) {
         for (double x = plot.left(); x < plot.right(); x += 4)
             p.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
         p.restore();
-        p.setPen(QPen(QColor(night_ ? "#c1a3ed" : "#8e819f"), 2,
-                      Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.setPen(QPen(QColor(night_ ? "#c1a3ed" : "#8e819f"), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p.drawPath(line);
         if (count == 1) {
             p.setBrush(accent);
@@ -168,7 +168,7 @@ void Chart::mouseMoveEvent(QMouseEvent *event) {
     hover_ = qBound(0, int((event->position().x() - plot.left()) / plot.width() * values_.size()),
                     int(values_.size()) - 1);
     QToolTip::showText(event->globalPosition().toPoint(),
-                       QString("%1 · %2 событий")
+                       QString(QCoreApplication::translate("Chart", "%1 · %2 событий"))
                            .arg(labels_.value(hover_), QLocale().toString(values_.value(hover_), 'f', 0)),
                        this);
     update();

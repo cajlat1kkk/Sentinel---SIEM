@@ -5,9 +5,9 @@ pkgdesc='Native C++ SIEM console with PostgreSQL, antivirus and DPDK network ins
 arch=('x86_64')
 url='https://localhost/sentinel-siem'
 license=('custom')
-depends=('qt6-base' 'qt6-svg' 'postgresql-libs' 'dpdk' 'openssl')
-makedepends=('cmake' 'ninja' 'pkgconf')
-optdepends=('clamav: full malware signature scanning' 'nftables: Linux firewall' 'polkit: firewall elevation' 'postgresql: local database server')
+depends=('qt6-base' 'qt6-svg' 'postgresql-libs' 'dpdk' 'openssl' 'python')
+makedepends=('cmake' 'ninja' 'pkgconf' 'qt6-tools')
+optdepends=('clamav: full malware signature scanning' 'nftables: Linux firewall' 'polkit: firewall elevation' 'postgresql: local database server and backup/diagnostic client tools')
 source=("sentinel-siem-${pkgver}.tar.gz")
 sha256sums=('SKIP')
 build() {

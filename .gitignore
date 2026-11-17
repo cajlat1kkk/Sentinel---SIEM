@@ -40,5 +40,9 @@ __pycache__/
 .venv/
 .idea/
 .vscode/
-docs/VPP_DPDK_R8169.md
+
+# Local agent instructions and working documentation
+/AGENTS.md
+/docs/**/*.md
+/docs/project-map.*
 

@@ -37,7 +37,9 @@ def main():
             raise SystemExit("Refusing to overwrite an existing CA")
         run(["req", "-x509", "-newkey", "rsa:3072", "-nodes", "-keyout", key, "-out", cert,
              "-subj", "/CN=" + args.name, "-days", "3650", "-addext", "basicConstraints=critical,CA:TRUE,pathlen:0",
-             "-addext", "keyUsage=critical,keyCertSign,cRLSign"])
+             "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+             "-addext", "subjectKeyIdentifier=hash",
+             "-addext", "authorityKeyIdentifier=keyid:always"])
         print("CA created. Keep ca.key offline; distribute only ca.crt.")
         return
     if not args.output or not key.is_file() or not cert.is_file():
@@ -46,24 +48,32 @@ def main():
     output_key, output_cert = args.output / "identity.key", args.output / "identity.crt"
     if output_key.exists() or output_cert.exists():
         raise SystemExit("Refusing to overwrite an existing identity")
-    extension = "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
+    extension = ("basicConstraints=critical,CA:FALSE\n"
+                 "keyUsage=critical,digitalSignature,keyEncipherment\n"
+                 "subjectKeyIdentifier=hash\n"
+                 "authorityKeyIdentifier=keyid:always\n")
+    verify_identity = ["verify", "-x509_strict"]
     if args.server_name:
         try:
             ipaddress.ip_address(args.server_name)
             san = "IP:" + args.server_name
+            verify_identity += ["-purpose", "sslserver", "-verify_ip", args.server_name]
         except ValueError:
             if not re.fullmatch(r"[a-zA-Z0-9.-]{1,253}", args.server_name):
                 raise SystemExit("Invalid server DNS name")
             san = "DNS:" + args.server_name
+            verify_identity += ["-purpose", "sslserver", "-verify_hostname", args.server_name]
         extension += "extendedKeyUsage=serverAuth\nsubjectAltName=" + san + "\n"
     else:
         extension += "extendedKeyUsage=clientAuth\n"
+        verify_identity += ["-purpose", "sslclient"]
     with tempfile.TemporaryDirectory(dir=args.output) as temporary:
         csr, ext = Path(temporary) / "request.csr", Path(temporary) / "extensions.txt"
         ext.write_text(extension)
         run(["req", "-newkey", "rsa:3072", "-nodes", "-keyout", output_key, "-out", csr, "-subj", "/CN=" + args.name])
         run(["x509", "-req", "-in", csr, "-CA", cert, "-CAkey", key, "-set_serial", "0x" + secrets.token_hex(16),
              "-out", output_cert, "-days", "365", "-extfile", ext])
+    run([*verify_identity, "-CAfile", cert, output_cert])
     (args.output / "ca.crt").write_bytes(cert.read_bytes())
     der = ssl.PEM_cert_to_DER_cert(output_cert.read_text())
     print("Certificate SHA-256:", hashlib.sha256(der).hexdigest())

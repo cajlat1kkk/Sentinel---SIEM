@@ -21,6 +21,7 @@ class FleetWindow final : public QMainWindow {
     fleet::RpcClient client_;
     QTabWidget *tabs_;
     QLabel *status_, *identity_, *metrics_;
+    QLabel *radarStatus_ = nullptr;
     QLineEdit *search_;
     QComboBox *group_;
     QList<QTableWidget *> tables_;

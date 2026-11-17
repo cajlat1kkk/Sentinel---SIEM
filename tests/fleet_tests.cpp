@@ -1,4 +1,5 @@
 #include "core/scanner.h"
+#include "fleet/metrics.h"
 #include "fleet/policy.h"
 #include "fleet/queue.h"
 #include "fleet/repository.h"
@@ -41,6 +42,10 @@ class FleetTests final : public QObject {
         const QString admin(64, 'a'), analyst(64, 'b'), device(64, 'c'), other(64, 'd');
         repo.addOperator(admin, "Administrator", "admin");
         repo.addOperator(analyst, "Analyst", "analyst");
+        auto operatorTicket = repo.dispatch(admin, "enrollment.create", {{"identity", analyst}});
+        auto operatorParams = QJsonObject{
+            {"token", operatorTicket["token"]}, {"hostname", "operator-pc"}, {"platform", "linux"}};
+        QVERIFY_EXCEPTION_THROWN(repo.dispatch(analyst, "agent.enroll", operatorParams), std::runtime_error);
         QVERIFY_EXCEPTION_THROWN(repo.dispatch(analyst, "enrollment.create", {{"identity", device}}),
                                  std::runtime_error);
         auto ticket = repo.dispatch(admin, "enrollment.create", {{"identity", device}});
@@ -48,6 +53,8 @@ class FleetTests final : public QObject {
         QVERIFY_EXCEPTION_THROWN(repo.dispatch(other, "agent.enroll", params), std::runtime_error);
         QVERIFY(repo.dispatch(device, "agent.enroll", params)["enrolled"].toBool());
         QVERIFY(repo.dispatch(device, "agent.enroll", params)["enrolled"].toBool());
+        QVERIFY_EXCEPTION_THROWN(repo.addOperator(device, "Device as operator", "analyst"),
+                                 std::runtime_error);
         QVERIFY_EXCEPTION_THROWN(repo.dispatch(device, "events.list", {}), std::runtime_error);
         const auto eventId = uuid();
         Event event;
@@ -94,6 +101,44 @@ class FleetTests final : public QObject {
         QVERIFY(store.ingest(e, "delivery-1") > 0);
         QCOMPARE(store.ingest(e, "delivery-1"), qint64(0));
         QCOMPARE(store.scalar("SELECT COUNT(*) FROM events").toInt(), 1);
+    }
+    void prometheusMetricsAreBoundedAndContainNoFleetIdentity() {
+        QTemporaryDir dir;
+        Store store(dir.filePath("metrics.sqlite"));
+        Repository repo(store);
+        const QString admin(64, 'a'), device(64, 'c');
+        repo.addOperator(admin, "Administrator", "admin");
+        const auto ticket = repo.dispatch(admin, "enrollment.create", {{"identity", device}});
+        repo.dispatch(device, "agent.enroll",
+                      {{"token", ticket["token"]}, {"hostname", "secret-hostname"}, {"platform", "linux"}});
+        Event event;
+        event.host = "must-not-leak";
+        event.message = "private event contents";
+        repo.dispatch(device, "agent.poll",
+                      {{"events", QJsonArray{QJsonObject{{"id", uuid()}, {"event", eventJson(event)}}}}});
+
+        MetricsRegistry metrics;
+        metrics.recordRpcRequest();
+        metrics.recordRpcResult(false);
+        metrics.setDatabaseSnapshot(repo.monitoringSnapshot());
+        const auto rendered = metrics.render();
+        QVERIFY(rendered.contains("sentinel_database_up 1\n"));
+        QVERIFY(rendered.contains("sentinel_rpc_requests_total 1\n"));
+        QVERIFY(rendered.contains("sentinel_fleet_devices{state=\"active\"} 1\n"));
+        QVERIFY(rendered.contains("sentinel_fleet_events 1\n"));
+        QVERIFY(!rendered.contains(device.toUtf8()));
+        QVERIFY(!rendered.contains("secret-hostname"));
+        QVERIFY(!rendered.contains("private event contents"));
+        metrics.setDatabaseDown();
+        QVERIFY(metrics.render().contains("sentinel_database_up 0\n"));
+
+        MetricsRegistry remoteRegistry;
+        PrometheusServer remote(remoteRegistry);
+        QString error;
+        QVERIFY(!remote.listenConfigured(
+            QJsonObject{{"enabled", true}, {"listen", "0.0.0.0"}, {"port", 9108}, {"allow_remote", false}},
+            &error));
+        QVERIFY(error.contains("allow_remote"));
     }
     void retentionPreservesIncidentEvidence() {
         QTemporaryDir dir;

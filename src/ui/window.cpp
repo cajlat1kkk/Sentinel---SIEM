@@ -1,6 +1,8 @@
 #include "window.h"
+#include "maintenance_dialog.h"
 #include "chart.h"
 #include "core/firewall.h"
+#include "language.h"
 #include "ngfw_page.h"
 #include "theme.h"
 #include "visuals.h"
@@ -8,6 +10,7 @@
 #include <QBoxLayout>
 #include <QButtonGroup>
 #include <QCloseEvent>
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -25,6 +28,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QScrollArea>
@@ -42,22 +46,30 @@
 
 namespace siem {
 namespace {
-const QStringList titles = {"Обзор безопасности",
-                            "Оповещения",
-                            "Инциденты",
-                            "События безопасности",
-                            "Активы",
-                            "Правила и NGFW",
-                            "Антивирус",
-                            "Сетевой движок",
-                            "Отчёты",
-                            "Настройки"};
-const QStringList subtitles = {
-    "Безопасность инфраструктуры в реальном времени", "События, которые требуют вашего внимания",
-    "Расследование и реагирование на угрозы",         "Единый журнал событий вашей инфраструктуры",
-    "Устройства, обнаруженные в источниках событий",  "Корреляция событий и политики сетевой защиты",
-    "Проверка файлов, сигнатуры и карантин",          "Мониторинг DPDK и интеграция с FD.io VPP",
-    "Экспорт данных и журнал действий аналитика",     "Подключения и параметры рабочего пространства"};
+QStringList pageTitles() {
+    return {QCoreApplication::translate("Window", "Обзор безопасности"),
+            QCoreApplication::translate("Window", "Оповещения"),
+            QCoreApplication::translate("Window", "Инциденты"),
+            QCoreApplication::translate("Window", "События безопасности"),
+            QCoreApplication::translate("Window", "Активы"),
+            QCoreApplication::translate("Window", "Правила и NGFW"),
+            QCoreApplication::translate("Window", "Антивирус"),
+            QCoreApplication::translate("Window", "Сетевой движок"),
+            QCoreApplication::translate("Window", "Отчёты"),
+            QCoreApplication::translate("Window", "Настройки")};
+}
+QStringList pageSubtitles() {
+    return {QCoreApplication::translate("Window", "Безопасность инфраструктуры в реальном времени"),
+            QCoreApplication::translate("Window", "События, которые требуют вашего внимания"),
+            QCoreApplication::translate("Window", "Расследование и реагирование на угрозы"),
+            QCoreApplication::translate("Window", "Единый журнал событий вашей инфраструктуры"),
+            QCoreApplication::translate("Window", "Устройства, обнаруженные в источниках событий"),
+            QCoreApplication::translate("Window", "Корреляция событий и политики сетевой защиты"),
+            QCoreApplication::translate("Window", "Проверка файлов, сигнатуры и карантин"),
+            QCoreApplication::translate("Window", "Мониторинг DPDK и интеграция с FD.io VPP"),
+            QCoreApplication::translate("Window", "Экспорт данных и журнал действий аналитика"),
+            QCoreApplication::translate("Window", "Подключения и параметры рабочего пространства")};
+}
 QLabel *label(const QString &text, const char *name = nullptr) {
     auto *l = new QLabel(text);
     l->setTextFormat(Qt::PlainText);
@@ -210,7 +222,8 @@ void populate(QTableWidget *t, const QList<QVariantMap> &rows, const QStringList
             if (k == "status")
                 value = statusLabel(value);
             if (k == "enabled")
-                value = r[k].toInt() ? "Включено" : "Выключено";
+                value = r[k].toInt() ? QCoreApplication::translate("Window", "Включено")
+                                     : QCoreApplication::translate("Window", "Выключено");
             auto *item = new QTableWidgetItem(value);
             item->setData(Qt::UserRole, r.value("id", r.value("host")));
             item->setToolTip(value);
@@ -298,8 +311,12 @@ Window::Window(Store &s, bool demo)
     auto *tabs = new QHBoxLayout(capsule);
     tabs->setContentsMargins(5, 5, 5, 5);
     tabs->setSpacing(3);
-    const QList<QPair<int, QString>> links = {{0, "Обзор"},  {3, "События"}, {2, "Инциденты"},
-                                              {4, "Активы"}, {5, "Правила"}, {8, "Отчёты"}};
+    const QList<QPair<int, QString>> links = {{0, QCoreApplication::translate("Window", "Обзор")},
+                                              {3, QCoreApplication::translate("Window", "События")},
+                                              {2, QCoreApplication::translate("Window", "Инциденты")},
+                                              {4, QCoreApplication::translate("Window", "Активы")},
+                                              {5, QCoreApplication::translate("Window", "Правила")},
+                                              {8, QCoreApplication::translate("Window", "Отчёты")}};
     for (const auto &entry : links) {
         auto *b = button(entry.second, "topNav");
         b->setCheckable(true);
@@ -312,8 +329,8 @@ Window::Window(Store &s, bool demo)
     tl->addStretch();
     auto *theme = button("◐", "roundButton");
     theme->setFixedSize(38, 38);
-    theme->setToolTip("Включить / выключить ночную тему");
-    theme->setAccessibleName("Ночная тема");
+    theme->setToolTip(QCoreApplication::translate("Window", "Включить / выключить ночную тему"));
+    theme->setAccessibleName(QCoreApplication::translate("Window", "Ночная тема"));
     connect(theme, &QPushButton::clicked, this,
             [this] { applyTheme(themeName_ == "night" ? lastLightTheme_ : "night"); });
     tl->addWidget(theme);
@@ -321,19 +338,19 @@ Window::Window(Store &s, bool demo)
     alert->setProperty("iconIndex", 1);
     alert->setIcon(icon(1, QColor("#4c4a51")));
     alert->setFixedSize(38, 38);
-    alert->setToolTip("Оповещения");
+    alert->setToolTip(QCoreApplication::translate("Window", "Оповещения"));
     tl->addWidget(alert);
     auto *settingsButton = button("", "roundButton");
     settingsButton->setProperty("iconIndex", 9);
     settingsButton->setIcon(icon(9, QColor("#4c4a51")));
     settingsButton->setFixedSize(38, 38);
-    settingsButton->setToolTip("Настройки");
+    settingsButton->setToolTip(QCoreApplication::translate("Window", "Настройки"));
     connect(settingsButton, &QPushButton::clicked, this, [this] { navigate(9); });
     tl->addWidget(settingsButton);
     auto *avatar = label("SA", "avatar");
     avatar->setAlignment(Qt::AlignCenter);
     avatar->setFixedSize(38, 38);
-    avatar->setToolTip("SOC-аналитик");
+    avatar->setToolTip(QCoreApplication::translate("Window", "SOC-аналитик"));
     tl->addWidget(avatar);
     surfaceLayout->addWidget(top);
 
@@ -348,13 +365,21 @@ Window::Window(Store &s, bool demo)
     auto *expandNav = button("☰", "roundButton");
     expandNav->setFixedSize(40, 40);
     expandNav->setCheckable(true);
-    expandNav->setToolTip("Показать названия разделов");
-    expandNav->setAccessibleName("Развернуть навигацию");
+    expandNav->setToolTip(QCoreApplication::translate("Window", "Показать названия разделов"));
+    expandNav->setAccessibleName(QCoreApplication::translate("Window", "Развернуть навигацию"));
     sl->addWidget(expandNav);
     auto *group = new QButtonGroup(this);
     group->setExclusive(true);
-    QStringList names = {"Панель мониторинга", "Оповещения", "Инциденты",      "События", "Активы",
-                         "Правила и NGFW",     "Антивирус",  "Сетевой движок", "Отчёты",  "Настройки"};
+    QStringList names = {QCoreApplication::translate("Window", "Панель мониторинга"),
+                         QCoreApplication::translate("Window", "Оповещения"),
+                         QCoreApplication::translate("Window", "Инциденты"),
+                         QCoreApplication::translate("Window", "События"),
+                         QCoreApplication::translate("Window", "Активы"),
+                         QCoreApplication::translate("Window", "Правила и NGFW"),
+                         QCoreApplication::translate("Window", "Антивирус"),
+                         QCoreApplication::translate("Window", "Сетевой движок"),
+                         QCoreApplication::translate("Window", "Отчёты"),
+                         QCoreApplication::translate("Window", "Настройки")};
     for (int i = 0; i < names.size(); ++i) {
         if (i == 9)
             sl->addStretch();
@@ -393,20 +418,22 @@ Window::Window(Store &s, bool demo)
     auto *heading = new QHBoxLayout;
     auto *ht = new QVBoxLayout;
     ht->setSpacing(4);
-    title_ = label(titles[0], "title");
-    subtitle_ = label(subtitles[0], "subtitle");
+    title_ = label(pageTitles()[0], "title");
+    subtitle_ = label(pageSubtitles()[0], "subtitle");
     ht->addWidget(title_);
     ht->addWidget(subtitle_);
     heading->addLayout(ht);
     heading->addStretch();
     search_ = new QLineEdit;
     search_->setObjectName("globalSearch");
-    search_->setPlaceholderText("Найти событие…   Ctrl + K");
+    search_->setPlaceholderText(QCoreApplication::translate("Window", "Найти событие…   Ctrl + K"));
     search_->setMinimumWidth(200);
     search_->setMaximumWidth(260);
     search_->addAction(icon(10, QColor("#83808a")), QLineEdit::LeadingPosition);
     heading->addWidget(search_);
-    range_ = combo({"Последние 24 часа", "Последние 7 дней", "Последние 30 дней"});
+    range_ = combo({QCoreApplication::translate("Window", "Последние 24 часа"),
+                    QCoreApplication::translate("Window", "Последние 7 дней"),
+                    QCoreApplication::translate("Window", "Последние 30 дней")});
     range_->setObjectName("periodSelector");
     heading->addWidget(range_);
     bl->addLayout(heading);
@@ -427,8 +454,9 @@ Window::Window(Store &s, bool demo)
     stack_->addWidget(settingsPage());
     bl->addWidget(stack_, 1);
     auto *bottom = new QHBoxLayout;
-    footer_ =
-        label(demo ? "●  Демо · пример данных" : "●  PostgreSQL · рабочее пространство", "workspaceStatus");
+    footer_ = label(demo ? QCoreApplication::translate("Window", "●  Демо · пример данных")
+                         : QCoreApplication::translate("Window", "●  PostgreSQL · рабочее пространство"),
+                    "workspaceStatus");
     bottom->addWidget(footer_);
     bottom->addStretch();
     auto *switcher = new QFrame;
@@ -438,7 +466,7 @@ Window::Window(Store &s, bool demo)
     themeLayout->setSpacing(2);
     flowTheme_ = button("●  Flow", "themeOption");
     emberTheme_ = button("●  Ember", "themeOption");
-    nightTheme_ = button("◐  Ночь", "themeOption");
+    nightTheme_ = button(QCoreApplication::translate("Window", "◐  Ночь"), "themeOption");
     nightTheme_->setCheckable(true);
     nightTheme_->setFixedHeight(28);
     flowTheme_->setCheckable(true);
@@ -454,7 +482,8 @@ Window::Window(Store &s, bool demo)
     connect(emberTheme_, &QPushButton::clicked, this, [this] { applyTheme("ember"); });
     bottom->addWidget(switcher);
     bottom->addStretch();
-    bottom->addWidget(label("Локальная консоль  /  0.2", "workspaceStatus"));
+    bottom->addWidget(
+        label(QCoreApplication::translate("Window", "Локальная консоль  /  0.2"), "workspaceStatus"));
     bl->addLayout(bottom);
     workspaceRow->addWidget(workspace, 1);
     surfaceLayout->addLayout(workspaceRow, 1);
@@ -487,7 +516,7 @@ Window::Window(Store &s, bool demo)
             findings_->setItem(i, 1, new QTableWidgetItem(f.signature));
             findings_->setItem(i, 2, new QTableWidgetItem(f.sha256));
             Event e;
-            e.source = "Антивирус";
+            e.source = QCoreApplication::translate("Window", "Антивирус");
             e.host = QHostInfo::localHostName();
             e.category = "malware";
             e.severity = "high";
@@ -495,15 +524,20 @@ Window::Window(Store &s, bool demo)
             store_.ingest(e);
         }
         auto text =
-            QString("%1 · Проверено: %2 · Обнаружено: %3 · Пропущено: %4\n%5")
-                .arg(r.cancelled ? "Отменено" : "Проверка завершена")
+            QString(QCoreApplication::translate("Window",
+                                                "%1 · Проверено: %2 · Обнаружено: %3 · Пропущено: %4\n%5"))
+                .arg(r.cancelled ? QCoreApplication::translate("Window", "Отменено")
+                                 : QCoreApplication::translate("Window", "Проверка завершена"))
                 .arg(r.scanned)
                 .arg(r.findings.size())
                 .arg(r.skipped)
-                .arg(r.clamUsed ? "ClamAV + локальные сигнатуры"
-                                : "EICAR + локальные SHA-256. ClamAV недоступен; это ограниченная проверка.");
+                .arg(r.clamUsed
+                         ? QCoreApplication::translate("Window", "ClamAV + локальные сигнатуры")
+                         : QCoreApplication::translate(
+                               "Window",
+                               "EICAR + локальные SHA-256. ClamAV недоступен; это ограниченная проверка."));
         if (!r.errors.isEmpty())
-            text += "\nОшибки: " + r.errors.join('\n');
+            text += QCoreApplication::translate("Window", "\nОшибки: ") + r.errors.join('\n');
         scanStatus_->setText(text);
         store_.audit("antivirus.scan", text);
         dirty_ = true;
@@ -543,7 +577,8 @@ Window::Window(Store &s, bool demo)
         refreshEngines();
     });
     search_->setClearButtonEnabled(true);
-    search_->setToolTip("Поиск по событиям, инцидентам и активам · Ctrl+K. Enter — открыть события.");
+    search_->setToolTip(QCoreApplication::translate(
+        "Window", "Поиск по событиям, инцидентам и активам · Ctrl+K. Enter — открыть события."));
     navigate(0);
     refreshEngines();
     applyTheme(qApp->property("themeOverride").isValid() ? qApp->property("themeOverride").toString()
@@ -568,13 +603,15 @@ QWidget *Window::dashboard() {
     summary->setSpacing(28);
     auto *intro = new QVBoxLayout;
     intro->setSpacing(5);
-    intro->addWidget(label("ВСЁ В ОДНОМ ПРОСТРАНСТВЕ", "eyebrow"));
-    auto *quick = button("＋  Импортировать события", "quietAction");
+    intro->addWidget(label(QCoreApplication::translate("Window", "ВСЁ В ОДНОМ ПРОСТРАНСТВЕ"), "eyebrow"));
+    auto *quick = button(QCoreApplication::translate("Window", "＋  Импортировать события"), "quietAction");
     connect(quick, &QPushButton::clicked, this, &Window::importEvents);
     intro->addWidget(quick, 0, Qt::AlignLeft);
     summary->addLayout(intro, 2);
-    const QStringList names = {"Всего событий", "Открытых инцидентов", "Файлов в карантине",
-                               "Источников данных"};
+    const QStringList names = {QCoreApplication::translate("Window", "Всего событий"),
+                               QCoreApplication::translate("Window", "Открытых инцидентов"),
+                               QCoreApplication::translate("Window", "Файлов в карантине"),
+                               QCoreApplication::translate("Window", "Источников данных")};
     for (int i = 0; i < names.size(); ++i) {
         auto *metric = new QVBoxLayout;
         metric->setSpacing(3);
@@ -585,9 +622,11 @@ QWidget *Window::dashboard() {
         metrics_ << value;
         row->addWidget(value);
         if (i == 1)
-            row->addWidget(badge("в работе", "warm"), 0, Qt::AlignVCenter);
+            row->addWidget(badge(QCoreApplication::translate("Window", "в работе"), "warm"), 0,
+                           Qt::AlignVCenter);
         else if (i == 2)
-            row->addWidget(badge("изолировано", "green"), 0, Qt::AlignVCenter);
+            row->addWidget(badge(QCoreApplication::translate("Window", "изолировано"), "green"), 0,
+                           Qt::AlignVCenter);
         row->addStretch();
         metric->addLayout(row);
         summary->addLayout(metric, 1);
@@ -600,21 +639,21 @@ QWidget *Window::dashboard() {
     auto *riskCard = card(&risk);
     riskCard->setMinimumWidth(250);
     auto *riskHead = new QHBoxLayout;
-    riskHead->addWidget(label("Пульс безопасности", "cardTitle"));
+    riskHead->addWidget(label(QCoreApplication::translate("Window", "Пульс безопасности"), "cardTitle"));
     riskHead->addStretch();
     auto *riskOpen = button("↗", "cardArrow");
-    riskOpen->setToolTip("События высокого приоритета");
+    riskOpen->setToolTip(QCoreApplication::translate("Window", "События высокого приоритета"));
     connect(riskOpen, &QPushButton::clicked, this, [this] { navigate(1); });
     riskHead->addWidget(riskOpen);
     risk->addLayout(riskHead);
     auto *riskBody = new QHBoxLayout;
     auto *riskNumbers = new QVBoxLayout;
-    auto *riskCaption = label("Высокий\nприоритет", "muted");
+    auto *riskCaption = label(QCoreApplication::translate("Window", "Высокий\nприоритет"), "muted");
     riskNumbers->addStretch();
     riskNumbers->addWidget(riskCaption);
     highEvents_ = label("0", "riskValue");
     riskNumbers->addWidget(highEvents_);
-    riskNumbers->addWidget(label("событий за период", "tiny"));
+    riskNumbers->addWidget(label(QCoreApplication::translate("Window", "событий за период"), "tiny"));
     riskNumbers->addStretch();
     riskBody->addLayout(riskNumbers, 2);
     gauge_ = new GaugeWidget;
@@ -630,7 +669,7 @@ QWidget *Window::dashboard() {
         channels->addWidget(pill);
     }
     risk->addLayout(channels);
-    risk->addWidget(label("Каналы сбора событий", "tiny"));
+    risk->addWidget(label(QCoreApplication::translate("Window", "Каналы сбора событий"), "tiny"));
     hero->addWidget(riskCard, 30);
 
     QVBoxLayout *focus;
@@ -638,9 +677,9 @@ QWidget *Window::dashboard() {
     focusCard->setObjectName("focusCard");
     focusCard->setMinimumWidth(190);
     focus->setSpacing(8);
-    auto *focusTitle = label("В центре\nвнимания", "focusTitle");
+    auto *focusTitle = label(QCoreApplication::translate("Window", "В центре\nвнимания"), "focusTitle");
     focus->addWidget(focusTitle);
-    auto *open = button("Открыть инциденты  ↗", "focusAction");
+    auto *open = button(QCoreApplication::translate("Window", "Открыть инциденты  ↗"), "focusAction");
     open->setFixedHeight(32);
     connect(open, &QPushButton::clicked, this, [this] { navigate(2); });
     focus->addWidget(open, 0, Qt::AlignLeft);
@@ -651,7 +690,8 @@ QWidget *Window::dashboard() {
     focusNumberRow->addStretch();
     focusNumberRow->addWidget(label("↗", "focusDecoration"));
     focus->addLayout(focusNumberRow);
-    focus->addWidget(label("Инцидентов ожидают\nвашего решения", "focusCaption"));
+    focus->addWidget(
+        label(QCoreApplication::translate("Window", "Инцидентов ожидают\nвашего решения"), "focusCaption"));
     hero->addWidget(focusCard, 21);
 
     QVBoxLayout *protection;
@@ -659,14 +699,16 @@ QWidget *Window::dashboard() {
     protectionCard->setMinimumWidth(255);
     protection->setSpacing(8);
     auto *protectionHead = new QHBoxLayout;
-    protectionHead->addWidget(label("Модули защиты", "cardTitle"));
+    protectionHead->addWidget(label(QCoreApplication::translate("Window", "Модули защиты"), "cardTitle"));
     protectionHead->addStretch();
     auto *configure = button("↗", "cardArrow");
-    configure->setToolTip("Открыть правила защиты");
+    configure->setToolTip(QCoreApplication::translate("Window", "Открыть правила защиты"));
     connect(configure, &QPushButton::clicked, this, [this] { navigate(5); });
     protectionHead->addWidget(configure);
     protection->addLayout(protectionHead);
-    QStringList moduleNames = {"Антивирус", "HTTP-сигнатуры", "Корреляция", "Firewall"};
+    QStringList moduleNames = {QCoreApplication::translate("Window", "Антивирус"),
+                               QCoreApplication::translate("Window", "HTTP-сигнатуры"),
+                               QCoreApplication::translate("Window", "Корреляция"), "Firewall"};
     QList<int> moduleIcons = {6, 3, 7, 5};
     QList<int> modulePages = {6, 7, 5, 5};
     for (int i = 0; i < 4; ++i) {
@@ -686,7 +728,7 @@ QWidget *Window::dashboard() {
         rl->addWidget(go);
         rl->addWidget(label(moduleNames[i], "moduleName"));
         rl->addStretch();
-        auto *state = label("По запросу", "moduleState");
+        auto *state = label(QCoreApplication::translate("Window", "По запросу"), "moduleState");
         moduleStates_ << state;
         rl->addWidget(state);
         protection->addWidget(row);
@@ -697,10 +739,11 @@ QWidget *Window::dashboard() {
     auto *inventoryCard = card(&inventory);
     inventoryCard->setMinimumWidth(215);
     auto *inventoryHead = new QHBoxLayout;
-    inventoryHead->addWidget(label("Карта\nинфраструктуры", "cardTitle"));
+    inventoryHead->addWidget(
+        label(QCoreApplication::translate("Window", "Карта\nинфраструктуры"), "cardTitle"));
     inventoryHead->addStretch();
     auto *inventoryOpen = button("↗", "cardArrow");
-    inventoryOpen->setToolTip("Инвентаризация активов");
+    inventoryOpen->setToolTip(QCoreApplication::translate("Window", "Инвентаризация активов"));
     connect(inventoryOpen, &QPushButton::clicked, this, [this] { navigate(4); });
     inventoryHead->addWidget(inventoryOpen);
     inventory->addLayout(inventoryHead);
@@ -709,7 +752,7 @@ QWidget *Window::dashboard() {
     auto *assetRow = new QHBoxLayout;
     assetCount_ = label("0", "assetNumber");
     assetRow->addWidget(assetCount_);
-    assetRow->addWidget(label("узлов\nв журналах", "tiny"));
+    assetRow->addWidget(label(QCoreApplication::translate("Window", "узлов\nв журналах"), "tiny"));
     assetRow->addStretch();
     auto *assetOpen = button("→", "darkCircle");
     assetOpen->setFixedSize(32, 32);
@@ -724,14 +767,15 @@ QWidget *Window::dashboard() {
     QVBoxLayout *chartLayout;
     auto *chartCard = card(&chartLayout);
     auto *chartHead = new QHBoxLayout;
-    chartHead->addWidget(label("Активность событий", "cardTitle"));
+    chartHead->addWidget(label(QCoreApplication::translate("Window", "Активность событий"), "cardTitle"));
     chartHead->addStretch();
-    chartHead->addWidget(label("●  Все события", "chartLegend"));
+    chartHead->addWidget(label(QCoreApplication::translate("Window", "●  Все события"), "chartLegend"));
     auto *eventsOpen = button("↗", "cardArrow");
     connect(eventsOpen, &QPushButton::clicked, this, [this] { navigate(3); });
     chartHead->addWidget(eventsOpen);
     chartLayout->addLayout(chartHead);
-    chartLayout->addWidget(label("Распределение событий за выбранный период", "tiny"));
+    chartLayout->addWidget(
+        label(QCoreApplication::translate("Window", "Распределение событий за выбранный период"), "tiny"));
     chart_ = new Chart;
     chartLayout->addWidget(chart_, 1);
     activity->addWidget(chartCard, 5);
@@ -739,14 +783,17 @@ QWidget *Window::dashboard() {
     QVBoxLayout *recent;
     auto *recentCard = card(&recent);
     auto *recentHead = new QHBoxLayout;
-    recentHead->addWidget(label("Очередь расследований", "cardTitle"));
+    recentHead->addWidget(label(QCoreApplication::translate("Window", "Очередь расследований"), "cardTitle"));
     recentHead->addStretch();
-    auto *all = button("Все инциденты  ↗", "link");
+    auto *all = button(QCoreApplication::translate("Window", "Все инциденты  ↗"), "link");
     connect(all, &QPushButton::clicked, this, [this] { navigate(2); });
     recentHead->addWidget(all);
     recent->addLayout(recentHead);
-    recent->addWidget(label("Последние события, требующие внимания", "tiny"));
-    latest_ = table({"Угроза", "Приоритет", "Статус"});
+    recent->addWidget(
+        label(QCoreApplication::translate("Window", "Последние события, требующие внимания"), "tiny"));
+    latest_ = table({QCoreApplication::translate("Window", "Угроза"),
+                     QCoreApplication::translate("Window", "Приоритет"),
+                     QCoreApplication::translate("Window", "Статус")});
     latest_->setObjectName("recentTable");
     latest_->setColumnWidth(0, 290);
     latest_->setColumnWidth(1, 120);
@@ -769,11 +816,11 @@ QWidget *Window::dashboard() {
     nl->setSpacing(18);
     auto *networkTitle = new QVBoxLayout;
     networkTitle->setSpacing(3);
-    networkTitle->addWidget(label("Сетевой движок", "stripTitle"));
+    networkTitle->addWidget(label(QCoreApplication::translate("Window", "Сетевой движок"), "stripTitle"));
     networkTitle->addWidget(label("DPDK + VPP", "tiny"));
     nl->addLayout(networkTitle);
     nl->addSpacing(6);
-    dpdkBadge_ = label("DPDK · остановлен", "engineBadge");
+    dpdkBadge_ = label(QCoreApplication::translate("Window", "DPDK · остановлен"), "engineBadge");
     nl->addWidget(dpdkBadge_);
     auto metric = [&](const QString &caption, QLabel **value) {
         auto *column = new QVBoxLayout;
@@ -783,12 +830,12 @@ QWidget *Window::dashboard() {
         column->addWidget(*value);
         nl->addLayout(column, 1);
     };
-    metric("Пакетов", &dpdkPackets_);
-    metric("Объём", &dpdkBytes_);
-    metric("Отброшено", &dpdkDrops_);
-    vppBadge_ = label("VPP · нет связи", "engineBadge");
+    metric(QCoreApplication::translate("Window", "Пакетов"), &dpdkPackets_);
+    metric(QCoreApplication::translate("Window", "Объём"), &dpdkBytes_);
+    metric(QCoreApplication::translate("Window", "Отброшено"), &dpdkDrops_);
+    vppBadge_ = label(QCoreApplication::translate("Window", "VPP · нет связи"), "engineBadge");
     nl->addWidget(vppBadge_);
-    auto *networkOpen = button("Подключить  ↗", "quietAction");
+    auto *networkOpen = button(QCoreApplication::translate("Window", "Подключить  ↗"), "quietAction");
     connect(networkOpen, &QPushButton::clicked, this, [this] { navigate(7); });
     nl->addWidget(networkOpen);
     network->addLayout(nl);
@@ -799,25 +846,32 @@ QWidget *Window::eventsPage(bool alerts) {
     QVBoxLayout *l;
     auto *page = card(&l);
     auto *toolbar = new QHBoxLayout;
-    toolbar->addWidget(label(alerts ? "Высокий и критический приоритет" : "Журнал событий", "cardTitle"));
+    toolbar->addWidget(label(alerts ? QCoreApplication::translate("Window", "Высокий и критический приоритет")
+                                    : QCoreApplication::translate("Window", "Журнал событий"),
+                             "cardTitle"));
     toolbar->addStretch();
     if (!alerts) {
-        severity_ = combo({"Все приоритеты", "critical", "high", "medium", "low", "info"});
+        severity_ = combo({QCoreApplication::translate("Window", "Все приоритеты"), "critical", "high",
+                           "medium", "low", "info"});
         toolbar->addWidget(severity_);
         connect(severity_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
             eventPage_[0] = 0;
             dirty_ = true;
             refreshData();
         });
-        auto *load = button("Импорт журналов");
+        auto *load = button(QCoreApplication::translate("Window", "Импорт журналов"));
         toolbar->addWidget(load);
         connect(load, &QPushButton::clicked, this, &Window::importEvents);
     }
-    auto *exportBtn = button("Экспорт страницы CSV");
+    auto *exportBtn = button(QCoreApplication::translate("Window", "Экспорт страницы CSV"));
     toolbar->addWidget(exportBtn);
     connect(exportBtn, &QPushButton::clicked, this, &Window::exportEvents);
     l->addLayout(toolbar);
-    auto *t = table({"ID", "Время", "Источник", "Узел", "Приоритет", "Сообщение"});
+    auto *t = table({"ID", QCoreApplication::translate("Window", "Время"),
+                     QCoreApplication::translate("Window", "Источник"),
+                     QCoreApplication::translate("Window", "Узел"),
+                     QCoreApplication::translate("Window", "Приоритет"),
+                     QCoreApplication::translate("Window", "Сообщение")});
     t->setColumnWidth(0, 65);
     t->setColumnWidth(1, 155);
     t->setColumnWidth(2, 130);
@@ -827,8 +881,8 @@ QWidget *Window::eventsPage(bool alerts) {
     const int slot = alerts ? 1 : 0;
     auto *paging = new QHBoxLayout;
     pageLabels_[slot] = label("", "muted");
-    previousPage_[slot] = button("← Новее");
-    nextPage_[slot] = button("Старее →");
+    previousPage_[slot] = button(QCoreApplication::translate("Window", "← Новее"));
+    nextPage_[slot] = button(QCoreApplication::translate("Window", "Старее →"));
     paging->addWidget(pageLabels_[slot]);
     paging->addStretch();
     paging->addWidget(previousPage_[slot]);
@@ -853,13 +907,17 @@ QWidget *Window::incidentsPage() {
     QVBoxLayout *l;
     auto *page = card(&l);
     auto *bar = new QHBoxLayout;
-    bar->addWidget(label("Очередь расследований", "cardTitle"));
+    bar->addWidget(label(QCoreApplication::translate("Window", "Очередь расследований"), "cardTitle"));
     bar->addStretch();
-    auto *open = button("Открыть инцидент", "primary");
+    auto *open = button(QCoreApplication::translate("Window", "Открыть инцидент"), "primary");
     bar->addWidget(open);
     connect(open, &QPushButton::clicked, this, &Window::incidentDialog);
     l->addLayout(bar);
-    incidents_ = table({"ID", "Время", "Угроза", "Узел", "Приоритет", "Статус"});
+    incidents_ =
+        table({"ID", QCoreApplication::translate("Window", "Время"),
+               QCoreApplication::translate("Window", "Угроза"), QCoreApplication::translate("Window", "Узел"),
+               QCoreApplication::translate("Window", "Приоритет"),
+               QCoreApplication::translate("Window", "Статус")});
     incidents_->setColumnWidth(0, 60);
     incidents_->setColumnWidth(1, 150);
     incidents_->setColumnWidth(2, 340);
@@ -871,32 +929,38 @@ QWidget *Window::assetsPage() {
     QVBoxLayout *l;
     auto *page = card(&l);
     auto *bar = new QHBoxLayout;
-    bar->addWidget(label("Инвентаризация из событий", "cardTitle"));
+    bar->addWidget(label(QCoreApplication::translate("Window", "Инвентаризация из событий"), "cardTitle"));
     bar->addStretch();
-    auto *local = button("Добавить этот компьютер", "primary");
+    auto *local = button(QCoreApplication::translate("Window", "Добавить этот компьютер"), "primary");
     bar->addWidget(local);
     connect(local, &QPushButton::clicked, this, [this] {
         Event e;
         e.source = "Host";
         e.host = QHostInfo::localHostName();
         e.category = "inventory";
-        e.message = "Локальный актив · " + QSysInfo::prettyProductName();
+        e.message =
+            QCoreApplication::translate("Window", "Локальный актив · ") + QSysInfo::prettyProductName();
         for (auto ip : QNetworkInterface::allAddresses())
             if (ip.protocol() == QAbstractSocket::IPv4Protocol && !ip.isLoopback()) {
                 e.ip = ip.toString();
                 break;
             }
         store_.ingest(e);
-        notify("Компьютер добавлен в инвентаризацию");
+        notify(QCoreApplication::translate("Window", "Компьютер добавлен в инвентаризацию"));
     });
     l->addLayout(bar);
-    assets_ = table({"Узел", "IP-адрес", "Последняя активность", "Источник"});
+    assets_ = table({QCoreApplication::translate("Window", "Узел"),
+                     QCoreApplication::translate("Window", "IP-адрес"),
+                     QCoreApplication::translate("Window", "Последняя активность"),
+                     QCoreApplication::translate("Window", "Источник")});
     assets_->setColumnWidth(0, 270);
     assets_->setColumnWidth(1, 210);
     assets_->setColumnWidth(2, 210);
     l->addWidget(assets_, 1);
-    l->addWidget(label("Список пополняется при получении событий. Наличие актива не означает, что на нём "
-                       "установлен агент защиты.",
+    l->addWidget(label(QCoreApplication::translate(
+                           "Window",
+                           "Список пополняется при получении событий. Наличие актива не означает, что на нём "
+                           "установлен агент защиты."),
                        "muted"));
     return page;
 }
@@ -908,22 +972,29 @@ QWidget *Window::rulesPage() {
     auto *cor = new QWidget;
     auto *cl = new QVBoxLayout(cor);
     auto *cb = new QHBoxLayout;
-    cb->addWidget(label("Совпадение текста + порог за временное окно", "muted"));
+    cb->addWidget(
+        label(QCoreApplication::translate("Window", "Совпадение текста + порог за временное окно"), "muted"));
     cb->addStretch();
-    auto *add = button("Добавить правило", "primary"), *edit = button("Изменить"),
-         *del = button("Удалить", "danger");
+    auto *add = button(QCoreApplication::translate("Window", "Добавить правило"), "primary"),
+         *edit = button(QCoreApplication::translate("Window", "Изменить")),
+         *del = button(QCoreApplication::translate("Window", "Удалить"), "danger");
     for (auto *b : {add, edit, del})
         cb->addWidget(b);
     connect(add, &QPushButton::clicked, this, [this] { editCorrelation(false); });
     connect(edit, &QPushButton::clicked, this, [this] { editCorrelation(true); });
     connect(del, &QPushButton::clicked, this, [this] { deleteRow(rules_, "rules"); });
     cl->addLayout(cb);
-    rules_ = table({"ID", "Название", "Содержит", "Порог", "Окно, сек.", "Приоритет", "Состояние"});
+    rules_ = table({"ID", QCoreApplication::translate("Window", "Название"),
+                    QCoreApplication::translate("Window", "Содержит"),
+                    QCoreApplication::translate("Window", "Порог"),
+                    QCoreApplication::translate("Window", "Окно, сек."),
+                    QCoreApplication::translate("Window", "Приоритет"),
+                    QCoreApplication::translate("Window", "Состояние")});
     rules_->setColumnWidth(0, 55);
     rules_->setColumnWidth(1, 220);
     rules_->setColumnWidth(2, 180);
     cl->addWidget(rules_, 1);
-    tabs->addTab(cor, "Корреляция SIEM");
+    tabs->addTab(cor, QCoreApplication::translate("Window", "Корреляция SIEM"));
     ngfw_ = new NgfwPage(store_, demo_);
     tabs->insertTab(0, ngfw_, "Firewall / NGFW");
     tabs->setCurrentIndex(0);
@@ -935,30 +1006,35 @@ QWidget *Window::antivirusPage() {
     auto *page = card(&l);
     auto *path = new QHBoxLayout;
     scanPath_ = new QLineEdit;
-    scanPath_->setPlaceholderText("Выберите файл или папку для проверки");
+    scanPath_->setPlaceholderText(
+        QCoreApplication::translate("Window", "Выберите файл или папку для проверки"));
     path->addWidget(scanPath_, 1);
-    auto *file = button("Файл"), *dir = button("Папка"), *start = button("Проверить", "primary"),
-         *cancel = button("Отмена");
+    auto *file = button(QCoreApplication::translate("Window", "Файл")),
+         *dir = button(QCoreApplication::translate("Window", "Папка")),
+         *start = button(QCoreApplication::translate("Window", "Проверить"), "primary"),
+         *cancel = button(QCoreApplication::translate("Window", "Отмена"));
     for (auto *b : {file, dir, start, cancel})
         path->addWidget(b);
     l->addLayout(path);
     connect(file, &QPushButton::clicked, this, [this] {
-        auto p = QFileDialog::getOpenFileName(this, "Выбрать файл");
+        auto p = QFileDialog::getOpenFileName(this, QCoreApplication::translate("Window", "Выбрать файл"));
         if (!p.isEmpty())
             scanPath_->setText(p);
     });
     connect(dir, &QPushButton::clicked, this, [this] {
-        auto p = QFileDialog::getExistingDirectory(this, "Выбрать папку");
+        auto p =
+            QFileDialog::getExistingDirectory(this, QCoreApplication::translate("Window", "Выбрать папку"));
         if (!p.isEmpty())
             scanPath_->setText(p);
     });
     connect(start, &QPushButton::clicked, this, &Window::scan);
     connect(cancel, &QPushButton::clicked, &scanner_, &Scanner::cancel);
     auto *options = new QHBoxLayout;
-    watchScan_ = new QCheckBox("Проверять изменения в выбранной папке");
+    watchScan_ =
+        new QCheckBox(QCoreApplication::translate("Window", "Проверять изменения в выбранной папке"));
     options->addWidget(watchScan_);
     options->addStretch();
-    auto *hashes = button("Импорт SHA-256");
+    auto *hashes = button(QCoreApplication::translate("Window", "Импорт SHA-256"));
     options->addWidget(hashes);
     connect(hashes, &QPushButton::clicked, this, &Window::loadHashes);
     connect(watchScan_, &QCheckBox::toggled, this, [this](bool enabled) {
@@ -968,7 +1044,7 @@ QWidget *Window::antivirusPage() {
         if (enabled) {
             if (!QFileInfo(scanPath_->text()).isDir() || !watcher_.addPath(scanPath_->text())) {
                 watchScan_->setChecked(false);
-                notify("Выберите доступную папку", true);
+                notify(QCoreApplication::translate("Window", "Выберите доступную папку"), true);
                 return;
             }
             scan();
@@ -976,37 +1052,46 @@ QWidget *Window::antivirusPage() {
     });
     connect(scanPath_, &QLineEdit::textChanged, this, [this] { watchScan_->setChecked(false); });
     l->addLayout(options);
-    scanStatus_ = label("Готов к проверке. EICAR и импортированные SHA-256 доступны сразу. ClamAV "
-                        "подключается при наличии clamscan и его баз.",
-                        "muted");
+    scanStatus_ =
+        label(QCoreApplication::translate(
+                  "Window", "Готов к проверке. EICAR и импортированные SHA-256 доступны сразу. ClamAV "
+                            "подключается при наличии clamscan и его баз."),
+              "muted");
     scanStatus_->setWordWrap(true);
     l->addWidget(scanStatus_);
     auto *tabs = new QTabWidget;
     l->addWidget(tabs, 1);
     auto *detected = new QWidget;
     auto *dl = new QVBoxLayout(detected);
-    findings_ = table({"Файл", "Сигнатура", "SHA-256"});
+    findings_ = table({QCoreApplication::translate("Window", "Файл"),
+                       QCoreApplication::translate("Window", "Сигнатура"), "SHA-256"});
     findings_->setColumnWidth(0, 420);
     findings_->setColumnWidth(1, 220);
     dl->addWidget(findings_, 1);
-    auto *isolateBtn = button("Поместить выбранный файл в карантин", "danger");
+    auto *isolateBtn =
+        button(QCoreApplication::translate("Window", "Поместить выбранный файл в карантин"), "danger");
     dl->addWidget(isolateBtn, 0, Qt::AlignRight);
     connect(isolateBtn, &QPushButton::clicked, this, &Window::isolate);
-    tabs->addTab(detected, "Обнаружения");
+    tabs->addTab(detected, QCoreApplication::translate("Window", "Обнаружения"));
     auto *q = new QWidget;
     auto *ql = new QVBoxLayout(q);
-    quarantine_ = table({"ID", "Исходный файл", "Сигнатура", "Дата", "Состояние"});
+    quarantine_ = table({"ID", QCoreApplication::translate("Window", "Исходный файл"),
+                         QCoreApplication::translate("Window", "Сигнатура"),
+                         QCoreApplication::translate("Window", "Дата"),
+                         QCoreApplication::translate("Window", "Состояние")});
     quarantine_->setColumnWidth(0, 55);
     quarantine_->setColumnWidth(1, 400);
     quarantine_->setColumnWidth(2, 200);
     ql->addWidget(quarantine_, 1);
-    auto *restoreBtn = button("Восстановить выбранный файл");
+    auto *restoreBtn = button(QCoreApplication::translate("Window", "Восстановить выбранный файл"));
     ql->addWidget(restoreBtn, 0, Qt::AlignRight);
     connect(restoreBtn, &QPushButton::clicked, this, &Window::restore);
-    tabs->addTab(q, "Карантин");
-    l->addWidget(label("Наблюдение: только изменения непосредственного содержимого папки; не является "
-                       "перехватом файлов в ядре.",
-                       "muted"));
+    tabs->addTab(q, QCoreApplication::translate("Window", "Карантин"));
+    l->addWidget(
+        label(QCoreApplication::translate(
+                  "Window", "Наблюдение: только изменения непосредственного содержимого папки; не является "
+                            "перехватом файлов в ядре."),
+              "muted"));
     return page;
 }
 QWidget *Window::enginesPage() {
@@ -1016,13 +1101,16 @@ QWidget *Window::enginesPage() {
     QVBoxLayout *dl;
     auto *dp = card(&dl);
     auto *dh = new QHBoxLayout;
-    dh->addWidget(label("DPDK · нативный пакетный сенсор", "cardTitle"));
+    dh->addWidget(
+        label(QCoreApplication::translate("Window", "DPDK · нативный пакетный сенсор"), "cardTitle"));
     dh->addStretch();
-    dpdkState_ = label("Не запущен", "muted");
+    dpdkState_ = label(QCoreApplication::translate("Window", "Не запущен"), "muted");
     dh->addWidget(dpdkState_);
     dl->addLayout(dh);
-    auto *desc = label("PCAP можно анализировать без доступа к сетевой карте. Для живого трафика задайте "
-                       "EAL-параметры и подготовьте интерфейсы вручную.",
+    auto *desc = label(QCoreApplication::translate(
+                           "Window",
+                           "PCAP можно анализировать без доступа к сетевой карте. Для живого трафика задайте "
+                           "EAL-параметры и подготовьте интерфейсы вручную."),
                        "muted");
     desc->setWordWrap(true);
     dl->addWidget(desc);
@@ -1043,19 +1131,22 @@ QWidget *Window::enginesPage() {
         }
     }
     ealArgs_ = new QLineEdit(savedEal);
-    ealArgs_->setPlaceholderText("например: -l 1 --no-telemetry -a 0000:04:00.0");
+    ealArgs_->setPlaceholderText(
+        QCoreApplication::translate("Window", "например: -l 1 --no-telemetry -a 0000:04:00.0"));
     dl->addWidget(ealArgs_);
     portHint_ = label("", "muted");
     portHint_->setWordWrap(true);
     dl->addWidget(portHint_);
     auto *db = new QHBoxLayout;
-    inlineMode_ = new QCheckBox("Inline: 2 порта, блокировка L3/L4 + HTTP-сигнатур");
+    inlineMode_ = new QCheckBox(
+        QCoreApplication::translate("Window", "Inline: 2 порта, блокировка L3/L4 + HTTP-сигнатур"));
     db->addWidget(inlineMode_);
-    autostartEngines_ = new QCheckBox("Автозапуск движков при старте");
+    autostartEngines_ = new QCheckBox(QCoreApplication::translate("Window", "Автозапуск движков при старте"));
     autostartEngines_->setChecked(settings_.value("engines/autostart", true).toBool());
     autostartEngines_->setEnabled(!qApp->property("enginesDisabled").toBool());
-    autostartEngines_->setToolTip(
-        "Подключиться к VPP и запустить DPDK-сенсор: PCAP-пример, если порт занят VPP, иначе живой захват.");
+    autostartEngines_->setToolTip(QCoreApplication::translate(
+        "Window",
+        "Подключиться к VPP и запустить DPDK-сенсор: PCAP-пример, если порт занят VPP, иначе живой захват."));
     db->addWidget(autostartEngines_);
     connect(autostartEngines_, &QCheckBox::toggled, this, [this](bool on) {
         settings_.setValue("engines/autostart", on);
@@ -1063,7 +1154,9 @@ QWidget *Window::enginesPage() {
             autoStartEngines();
     });
     db->addStretch();
-    auto *pcap = button("Открыть PCAP"), *run = button("Запустить", "primary"), *stop = button("Остановить");
+    auto *pcap = button(QCoreApplication::translate("Window", "Открыть PCAP")),
+         *run = button(QCoreApplication::translate("Window", "Запустить"), "primary"),
+         *stop = button(QCoreApplication::translate("Window", "Остановить"));
     for (auto *b : {pcap, run, stop})
         db->addWidget(b);
     connect(pcap, &QPushButton::clicked, this, [this] { startSensor(true); });
@@ -1074,17 +1167,18 @@ QWidget *Window::enginesPage() {
     QVBoxLayout *vl;
     auto *vp = card(&vl);
     auto *vh = new QHBoxLayout;
-    vh->addWidget(label("FD.io VPP · интерфейсы и счётчики", "cardTitle"));
+    vh->addWidget(
+        label(QCoreApplication::translate("Window", "FD.io VPP · интерфейсы и счётчики"), "cardTitle"));
     vh->addStretch();
-    vppState_ = label("Не подключён", "muted");
+    vppState_ = label(QCoreApplication::translate("Window", "Не подключён"), "muted");
     vh->addWidget(vppState_);
     vl->addLayout(vh);
     auto *vb = new QHBoxLayout;
     vppSocket_ = new QLineEdit(settings_.value("vpp/socket", "/run/vpp/cli.sock").toString());
     vb->addWidget(vppSocket_, 1);
-    auto *poll = button("Получить состояние", "primary");
+    auto *poll = button(QCoreApplication::translate("Window", "Получить состояние"), "primary");
     vb->addWidget(poll);
-    auto *raise = button("Поднять интерфейсы");
+    auto *raise = button(QCoreApplication::translate("Window", "Поднять интерфейсы"));
     vb->addWidget(raise);
     connect(poll, &QPushButton::clicked, this, [this] {
         settings_.setValue("vpp/socket", vppSocket_->text());
@@ -1092,7 +1186,7 @@ QWidget *Window::enginesPage() {
     });
     connect(raise, &QPushButton::clicked, this, [this] {
         if (!engines_.vppConnected) {
-            notify("Сначала подключитесь к VPP", true);
+            notify(QCoreApplication::translate("Window", "Сначала подключитесь к VPP"), true);
             return;
         }
         const auto summary = Engines::parseVppInterfaces(engines_.vppOutput);
@@ -1103,16 +1197,16 @@ QWidget *Window::enginesPage() {
                 names << name;
         }
         if (names.isEmpty()) {
-            notify("VPP не сообщил интерфейсов для изменения", true);
+            notify(QCoreApplication::translate("Window", "VPP не сообщил интерфейсов для изменения"), true);
             return;
         }
         if (QMessageBox::question(this, "VPP",
-                                  "Поднять интерфейсы VPP:\n" + names.join(", ") + "?") !=
-            QMessageBox::Yes)
+                                  QCoreApplication::translate("Window", "Поднять интерфейсы VPP:\n") +
+                                      names.join(", ") + "?") != QMessageBox::Yes)
             return;
         const auto bin = QStandardPaths::findExecutable("vppctl");
         if (bin.isEmpty()) {
-            notify("vppctl не найден", true);
+            notify(QCoreApplication::translate("Window", "vppctl не найден"), true);
             return;
         }
         int changed = 0;
@@ -1121,22 +1215,28 @@ QWidget *Window::enginesPage() {
                 0)
                 ++changed;
         }
-        notify(QString("Поднято интерфейсов: %1 из %2").arg(changed).arg(names.size()),
+        notify(QString(QCoreApplication::translate("Window", "Поднято интерфейсов: %1 из %2"))
+                   .arg(changed)
+                   .arg(names.size()),
                changed != names.size());
         engines_.startVppMonitoring(vppSocket_->text(), 15000);
     });
     vl->addLayout(vb);
-    vppHint_ = label("Состояние VPP обновляется автоматически каждые 15 секунд.", "muted");
+    vppHint_ = label(
+        QCoreApplication::translate("Window", "Состояние VPP обновляется автоматически каждые 15 секунд."),
+        "muted");
     vppHint_->setWordWrap(true);
     vl->addWidget(vppHint_);
-    vl->addWidget(label("VPP управляет собственными портами. Не назначайте один PCI-порт одновременно VPP и "
-                        "отдельному DPDK-сенсору.",
-                        "muted"));
+    vl->addWidget(label(
+        QCoreApplication::translate(
+            "Window", "VPP управляет собственными портами. Не назначайте один PCI-порт одновременно VPP и "
+                      "отдельному DPDK-сенсору."),
+        "muted"));
     l->addWidget(vp);
     engineLog_ = new QTextEdit;
     engineLog_->setReadOnly(true);
-    engineLog_->setPlaceholderText(
-        "Здесь появятся реальные счётчики DPDK, вывод VPP и диагностика подключения.");
+    engineLog_->setPlaceholderText(QCoreApplication::translate(
+        "Window", "Здесь появятся реальные счётчики DPDK, вывод VPP и диагностика подключения."));
     engineLog_->setFontFamily("monospace");
     l->addWidget(engineLog_, 1);
     return page;
@@ -1145,9 +1245,10 @@ QWidget *Window::reportsPage() {
     QVBoxLayout *l;
     auto *page = card(&l);
     auto *bar = new QHBoxLayout;
-    bar->addWidget(label("Отчёт центра безопасности", "cardTitle"));
+    bar->addWidget(label(QCoreApplication::translate("Window", "Отчёт центра безопасности"), "cardTitle"));
     bar->addStretch();
-    auto *json = button("Экспорт JSON"), *html = button("Сохранить отчёт HTML", "primary");
+    auto *json = button(QCoreApplication::translate("Window", "Экспорт JSON")),
+         *html = button(QCoreApplication::translate("Window", "Сохранить отчёт HTML"), "primary");
     bar->addWidget(json);
     bar->addWidget(html);
     connect(json, &QPushButton::clicked, this, [this] { saveReport(true); });
@@ -1157,8 +1258,10 @@ QWidget *Window::reportsPage() {
     reportPreview_->setReadOnly(true);
     reportPreview_->setMaximumHeight(190);
     l->addWidget(reportPreview_);
-    l->addWidget(label("Журнал действий", "cardTitle"));
-    audit_ = table({"Время", "Действие", "Подробности"});
+    l->addWidget(label(QCoreApplication::translate("Window", "Журнал действий"), "cardTitle"));
+    audit_ = table({QCoreApplication::translate("Window", "Время"),
+                    QCoreApplication::translate("Window", "Действие"),
+                    QCoreApplication::translate("Window", "Подробности")});
     audit_->setColumnWidth(0, 175);
     audit_->setColumnWidth(1, 210);
     l->addWidget(audit_, 1);
@@ -1167,29 +1270,31 @@ QWidget *Window::reportsPage() {
 QWidget *Window::settingsPage() {
     QVBoxLayout *l;
     auto *page = card(&l);
-    l->addWidget(label("Сбор событий", "cardTitle"));
+    l->addWidget(label(QCoreApplication::translate("Window", "Сбор событий"), "cardTitle"));
     auto *form = new QFormLayout;
     syslogPort_ = new QSpinBox;
     syslogPort_->setRange(1024, 65535);
     syslogPort_->setValue(settings_.value("collector/port", 5514).toInt());
     form->addRow("Syslog UDP · 127.0.0.1", syslogPort_);
-    autoCollect_ = new QCheckBox("Запускать коллектор при открытии приложения");
+    autoCollect_ =
+        new QCheckBox(QCoreApplication::translate("Window", "Запускать коллектор при открытии приложения"));
     autoCollect_->setChecked(settings_.value("collector/enabled", false).toBool());
     form->addRow("", autoCollect_);
     l->addLayout(form);
     auto *bar = new QHBoxLayout;
-    auto *start = button("Запустить коллектор", "primary"), *stop = button("Остановить");
+    auto *start = button(QCoreApplication::translate("Window", "Запустить коллектор"), "primary"),
+         *stop = button(QCoreApplication::translate("Window", "Остановить"));
     bar->addWidget(start);
     bar->addWidget(stop);
     bar->addStretch();
-    collectorState_ = label("Остановлен", "muted");
+    collectorState_ = label(QCoreApplication::translate("Window", "Остановлен"), "muted");
     bar->addWidget(collectorState_);
     l->addLayout(bar);
     connect(start, &QPushButton::clicked, this, &Window::startCollector);
     connect(stop, &QPushButton::clicked, this, [this] {
         collector_.stop();
-        collectorState_->setText("Остановлен");
-        store_.audit("collector.stop", "Остановлен пользователем");
+        collectorState_->setText(QCoreApplication::translate("Window", "Остановлен"));
+        store_.audit("collector.stop", QCoreApplication::translate("Window", "Остановлен пользователем"));
     });
     connect(autoCollect_, &QCheckBox::toggled, this, [this](bool v) {
         if (!demo_)
@@ -1197,22 +1302,79 @@ QWidget *Window::settingsPage() {
     });
     l->addSpacing(16);
     auto *hint = label(
-        "Коллектор принимает RFC5424, обычный syslog и JSONL. Для удалённых источников используйте локальный "
-        "rsyslog/syslog-ng с защищённой доставкой. Импорт Suricata EVE доступен в разделе «События».",
+        QCoreApplication::translate(
+            "Window",
+            "Коллектор принимает RFC5424, обычный syslog и JSONL. Для удалённых источников используйте "
+            "локальный "
+            "rsyslog/syslog-ng с защищённой доставкой. Импорт Suricata EVE доступен в разделе «События»."),
         "muted");
     hint->setWordWrap(true);
     l->addWidget(hint);
     l->addSpacing(20);
-    l->addWidget(label("Хранилище", "cardTitle"));
+    l->addWidget(label(QCoreApplication::translate("Window", "Интерфейс и роль компьютера"),
+                       "cardTitle"));
+    auto *interfaceForm = new QFormLayout;
+    auto *language = new QComboBox;
+    const auto languageOptions = LanguageManager::options(QLocale().name());
+    for (const auto &option : languageOptions)
+        language->addItem(option.label, option.preference);
+    const auto storedLanguage = LanguageManager::storedPreference(settings_);
+    const int languageIndex = language->findData(storedLanguage);
+    language->setCurrentIndex(languageIndex >= 0 ? languageIndex : 0);
+    interfaceForm->addRow(QCoreApplication::translate("Window", "Язык интерфейса"), language);
+    auto *languageHint = label(
+        QCoreApplication::translate("Window", "Изменение языка применяется после перезапуска приложения."),
+        "muted");
+    languageHint->setWordWrap(true);
+    interfaceForm->addRow(QString(), languageHint);
+    l->addLayout(interfaceForm);
+    connect(language, &QComboBox::currentIndexChanged, this, [this, language, languageHint] {
+        LanguageManager::storePreference(settings_, language->currentData().toString());
+        languageHint->setText(QCoreApplication::translate(
+            "Window", "Язык сохранён. Перезапустите приложение, чтобы применить его ко всем разделам."));
+    });
+    auto *interfaceActions = new QHBoxLayout;
+    auto *restart = button(QCoreApplication::translate("Window", "Перезапустить приложение"), "primary");
+    auto *setup = button(QCoreApplication::translate("Window", "Изменить роль и подключение…"));
+    interfaceActions->addWidget(restart);
+    interfaceActions->addWidget(setup);
+    auto *maintenance = button(QLocale().language() == QLocale::English ? "Maintenance…" : "Обслуживание…");
+    interfaceActions->addWidget(maintenance);
+    connect(maintenance, &QPushButton::clicked, this, [this] { MaintenanceDialog(this).exec(); });
+    interfaceActions->addStretch();
+    l->addLayout(interfaceActions);
+    connect(restart, &QPushButton::clicked, this, [this] {
+        QStringList arguments;
+        const auto current = QCoreApplication::arguments();
+        for (int i = 1; i < current.size(); ++i) {
+            if (current[i] == "--language") {
+                ++i;
+                continue;
+            }
+            if (!current[i].startsWith("--language="))
+                arguments << current[i];
+        }
+        if (close())
+            QProcess::startDetached(QCoreApplication::applicationFilePath(), arguments);
+    });
+    connect(setup, &QPushButton::clicked, this, [this] {
+        if (close())
+            QProcess::startDetached(QCoreApplication::applicationFilePath(), {"--setup"});
+    });
+    l->addSpacing(20);
+    l->addWidget(label(QCoreApplication::translate("Window", "Хранилище"), "cardTitle"));
     auto *db = label(store_.path());
     db->setTextInteractionFlags(Qt::TextSelectableByMouse);
     db->setWordWrap(true);
     l->addWidget(db);
     l->addWidget(
-        label(demo_ ? "Демо использует временную SQLite; рабочие данные хранятся в PostgreSQL."
-                    : "Параметры PostgreSQL выбираются при запуске. Пароль не сохраняется в настройках.",
+        label(demo_ ? QCoreApplication::translate(
+                          "Window", "Демо использует временную SQLite; рабочие данные хранятся в PostgreSQL.")
+                    : QCoreApplication::translate(
+                          "Window",
+                          "Параметры PostgreSQL выбираются при запуске. Пароль не сохраняется в настройках."),
               "muted"));
-    auto *open = button("Открыть папку приложения");
+    auto *open = button(QCoreApplication::translate("Window", "Открыть папку приложения"));
     l->addWidget(open, 0, Qt::AlignLeft);
     connect(open, &QPushButton::clicked, this, [] {
         auto path = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
@@ -1228,8 +1390,8 @@ void Window::navigate(int i) {
     if (i < 0 || i >= stack_->count())
         return;
     stack_->setCurrentIndex(i);
-    title_->setText(titles[i]);
-    subtitle_->setText(subtitles[i]);
+    title_->setText(pageTitles()[i]);
+    subtitle_->setText(pageSubtitles()[i]);
     nav_[i]->setChecked(true);
     for (int n = 0; n < nav_.size(); ++n)
         nav_[n]->setIcon(icon(n, QColor(n == i ? "#ffffff" : themeName_ == "night" ? "#b8c3d9" : "#89808f")));
@@ -1314,10 +1476,12 @@ void Window::refreshData() {
             populate(page == 1 ? alerts_ : events_, records,
                      {"id", "time", "source", "host", "severity", "message"});
             pageLabels_[slot]->setText(
-                records.isEmpty() ? "Нет событий по выбранным условиям"
-                                  : QString("Страница %1 · %2 записей · двойной щелчок — подробности")
-                                        .arg(eventPage_[slot] + 1)
-                                        .arg(records.size()));
+                records.isEmpty()
+                    ? QCoreApplication::translate("Window", "Нет событий по выбранным условиям")
+                    : QString(QCoreApplication::translate(
+                                  "Window", "Страница %1 · %2 записей · двойной щелчок — подробности"))
+                          .arg(eventPage_[slot] + 1)
+                          .arg(records.size()));
             previousPage_[slot]->setEnabled(eventPage_[slot] > 0);
             nextPage_[slot]->setEnabled(more);
         } else if (page == 2) {
@@ -1359,9 +1523,12 @@ void Window::refreshData() {
             populate(audit_, store_.rows("SELECT * FROM audit ORDER BY id DESC LIMIT 500"),
                      {"time", "action", "detail"});
             reportPreview_->setHtml(
-                QString("<h2>Сводка за выбранный период</h2><p>%1 — %2</p><p><b>%3</b> событий &nbsp;&nbsp; "
+                QString(
+                    QCoreApplication::translate(
+                        "Window",
+                        "<h2>Сводка за выбранный период</h2><p>%1 — %2</p><p><b>%3</b> событий &nbsp;&nbsp; "
                         "<b>%4</b> активных инцидентов &nbsp;&nbsp; <b>%5</b> файлов в карантине "
-                        "&nbsp;&nbsp; <b>%6</b> источников</p><p>Хранилище: %7</p>")
+                        "&nbsp;&nbsp; <b>%6</b> источников</p><p>Хранилище: %7</p>"))
                     .arg(QDateTime::fromString(start, Qt::ISODateWithMs)
                              .toLocalTime()
                              .toString("dd.MM.yyyy HH:mm"),
@@ -1397,17 +1564,24 @@ void Window::refreshData() {
             labels << stamp.toLocalTime().toString(days == 1 ? "HH:00" : "dd.MM");
         }
         chart_->setValues(values, labels);
-        moduleStates_[0]->setText(scanner_.busy() ? "Проверка…" : "По запросу");
+        moduleStates_[0]->setText(scanner_.busy() ? QCoreApplication::translate("Window", "Проверка…")
+                                                  : QCoreApplication::translate("Window", "По запросу"));
         moduleStates_[1]->setText(engines_.dpdkRunning
-                                    ? (engines_.dpdkSource == "PCAP"        ? "Активен · PCAP"
-                                       : engines_.dpdkSource == "PCAP-probe" ? "Активен · демо"
-                                                                            : "Активен")
-                                    : "Не запущен");
+                                      ? (engines_.dpdkSource == "PCAP"
+                                             ? QCoreApplication::translate("Window", "Активен · PCAP")
+                                         : engines_.dpdkSource == "PCAP-probe"
+                                             ? QCoreApplication::translate("Window", "Активен · демо")
+                                             : QCoreApplication::translate("Window", "Активен"))
+                                      : QCoreApplication::translate("Window", "Не запущен"));
         moduleStates_[2]->setText(
-            QString("%1 правил").arg(store_.scalar("SELECT COUNT(*) FROM rules WHERE enabled=1").toInt()));
-        moduleStates_[3]->setText(ngfw_->wasAppliedHere() ? "Применялось" : "Настроить");
+            QString(QCoreApplication::translate("Window", "%1 правил"))
+                .arg(store_.scalar("SELECT COUNT(*) FROM rules WHERE enabled=1").toInt()));
+        moduleStates_[3]->setText(ngfw_->wasAppliedHere()
+                                      ? QCoreApplication::translate("Window", "Применялось")
+                                      : QCoreApplication::translate("Window", "Настроить"));
     } catch (const std::exception &e) {
-        notify("Ошибка базы данных: " + QString::fromUtf8(e.what()), true);
+        notify(QCoreApplication::translate("Window", "Ошибка базы данных: ") + QString::fromUtf8(e.what()),
+               true);
     }
 }
 void Window::refreshEngines() {
@@ -1416,42 +1590,52 @@ void Window::refreshEngines() {
     dpdkState_->setText(engines_.dpdkStatus);
     vppState_->setText(engines_.vppStatus);
     dpdkBadge_->setText(engines_.dpdkRunning
-                            ? (engines_.dpdkSource == "PCAP"        ? "DPDK · PCAP"
-                               : engines_.dpdkSource == "PCAP-probe" ? "DPDK · PCAP (демо)"
-                               : engines_.dpdkSource == "inline"     ? "DPDK · inline"
-                                                                     : "DPDK · работает")
-                            : "DPDK · остановлен");
-    vppBadge_->setText(engines_.vppConnected ? "VPP · подключён" : "VPP · нет связи");
+                            ? (engines_.dpdkSource == "PCAP" ? "DPDK · PCAP"
+                               : engines_.dpdkSource == "PCAP-probe"
+                                   ? QCoreApplication::translate("Window", "DPDK · PCAP (демо)")
+                               : engines_.dpdkSource == "inline"
+                                   ? "DPDK · inline"
+                                   : QCoreApplication::translate("Window", "DPDK · работает"))
+                            : QCoreApplication::translate("Window", "DPDK · остановлен"));
+    vppBadge_->setText(engines_.vppConnected ? QCoreApplication::translate("Window", "VPP · подключён")
+                                             : QCoreApplication::translate("Window", "VPP · нет связи"));
     auto stats = engines_.stats;
     if (!stats.isEmpty()) {
         dpdkPackets_->setText(QLocale().toString(qint64(stats["packets"].toDouble())));
-        dpdkBytes_->setText(QString("%1 МБ").arg(stats["bytes"].toDouble() / 1048576, 0, 'f', 2));
+        dpdkBytes_->setText(QString(QCoreApplication::translate("Window", "%1 МБ"))
+                                .arg(stats["bytes"].toDouble() / 1048576, 0, 'f', 2));
         dpdkDrops_->setText(QString::number(qint64(stats["dropped"].toDouble())));
     }
     const bool enginesDisabled = qApp->property("enginesDisabled").toBool();
     if (ealArgs_ && ealArgs_->text().trimmed().isEmpty() && !enginesDisabled) {
         const auto suggested = engines_.suggestedEalArgs();
-        ealArgs_->setPlaceholderText(suggested.isEmpty()
-                                         ? QStringLiteral("например: -l 1 --no-telemetry -a 0000:04:00.0")
-                                         : QStringLiteral("Авто: ") + suggested);
+        ealArgs_->setPlaceholderText(
+            suggested.isEmpty()
+                ? QCoreApplication::translate("Window", "например: -l 1 --no-telemetry -a 0000:04:00.0")
+                : QCoreApplication::translate("Window", "Авто: ") + suggested);
     }
     if (vppHint_ && enginesDisabled) {
-        vppHint_->setText("Автоподключение отключено (--no-engines). Нажмите «Получить состояние» для "
-                          "разовой проверки.");
+        vppHint_->setText(QCoreApplication::translate(
+            "Window", "Автоподключение отключено (--no-engines). Нажмите «Получить состояние» для "
+                      "разовой проверки."));
     } else if (vppHint_) {
         if (!engines_.vppConnected)
-            vppHint_->setText("VPP не отвечает. Проверьте службу vpp, vppctl и путь к CLI-сокету.");
+            vppHint_->setText(QCoreApplication::translate(
+                "Window", "VPP не отвечает. Проверьте службу vpp, vppctl и путь к CLI-сокету."));
         else {
             const auto summary = Engines::parseVppInterfaces(engines_.vppOutput);
             if (summary["total"].toInt() > 0 && summary["up"].toInt() == 0)
-                vppHint_->setText("VPP подключён, но ни один интерфейс не имеет link up (carrier down). "
-                                  "Проверьте кабель/SPAN или поднимите интерфейс через vppctl.");
+                vppHint_->setText(QCoreApplication::translate(
+                    "Window", "VPP подключён, но ни один интерфейс не имеет link up (carrier down). "
+                              "Проверьте кабель/SPAN или поднимите интерфейс через vppctl."));
             else
-                vppHint_->setText("Состояние VPP обновляется автоматически каждые 15 секунд.");
+                vppHint_->setText(QCoreApplication::translate(
+                    "Window", "Состояние VPP обновляется автоматически каждые 15 секунд."));
         }
     }
     if (portHint_ && enginesDisabled) {
-        portHint_->setText("Автоподключение движков отключено (--no-engines).");
+        portHint_->setText(
+            QCoreApplication::translate("Window", "Автоподключение движков отключено (--no-engines)."));
     } else if (portHint_) {
         const auto busy = engines_.vppPorts();
         const auto signature = (engines_.vppConnected ? QString("1|") : QString("0|")) + busy.join(',');
@@ -1463,14 +1647,19 @@ void Window::refreshEngines() {
                     free << port.bdf;
             }
             if (!free.isEmpty())
-                portHint_->setText("Свободные DPDK-порты (vfio-pci): " + free.join(", "));
-            else if (!busy.isEmpty())
-                portHint_->setText(QString("Свободных DPDK-портов нет: %1 занят VPP. Используйте PCAP или "
-                                           "остановите VPP.")
-                                       .arg(busy.join(", ")));
-            else
                 portHint_->setText(
-                    "Нет Ethernet-портов на vfio-pci. Привяжите NIC к vfio-pci или используйте PCAP.");
+                    QCoreApplication::translate("Window", "Свободные DPDK-порты (vfio-pci): ") +
+                    free.join(", "));
+            else if (!busy.isEmpty())
+                portHint_->setText(
+                    QString(QCoreApplication::translate(
+                                "Window", "Свободных DPDK-портов нет: %1 занят VPP. Используйте PCAP или "
+                                          "остановите VPP."))
+                        .arg(busy.join(", ")));
+            else
+                portHint_->setText(QCoreApplication::translate(
+                    "Window",
+                    "Нет Ethernet-портов на vfio-pci. Привяжите NIC к vfio-pci или используйте PCAP."));
         }
     }
     engineLog_->setPlainText("DPDK\n" + QString::fromUtf8(QJsonDocument(stats).toJson()) + "\n" +
@@ -1478,8 +1667,9 @@ void Window::refreshEngines() {
     dirty_ = true;
 }
 void Window::importEvents() {
-    auto path = QFileDialog::getOpenFileName(this, "Импорт журнала", {},
-                                             "Журналы (*.jsonl *.json *.log *.txt);;Все файлы (*)");
+    auto path = QFileDialog::getOpenFileName(
+        this, QCoreApplication::translate("Window", "Импорт журнала"), {},
+        QCoreApplication::translate("Window", "Журналы (*.jsonl *.json *.log *.txt);;Все файлы (*)"));
     if (path.isEmpty())
         return;
     QString error;
@@ -1491,12 +1681,16 @@ void Window::importEvents() {
         error = QString::fromUtf8(e.what());
     }
     QApplication::restoreOverrideCursor();
-    notify(error.isEmpty() ? QString("Импортировано %1 событий").arg(count) : error, !error.isEmpty());
+    notify(error.isEmpty()
+               ? QString(QCoreApplication::translate("Window", "Импортировано %1 событий")).arg(count)
+               : error,
+           !error.isEmpty());
     dirty_ = true;
 }
 void Window::exportEvents() {
     auto *t = stack_->currentIndex() == 1 ? alerts_ : events_;
-    auto path = QFileDialog::getSaveFileName(this, "Экспорт событий", "events.csv", "CSV (*.csv)");
+    auto path = QFileDialog::getSaveFileName(this, QCoreApplication::translate("Window", "Экспорт событий"),
+                                             "events.csv", "CSV (*.csv)");
     if (path.isEmpty())
         return;
     QString out;
@@ -1515,7 +1709,7 @@ void Window::exportEvents() {
     QString error;
     if (save(path, QByteArray::fromHex("efbbbf") + out.toUtf8(), &error)) {
         store_.audit("events.export", path);
-        notify("Видимые события экспортированы");
+        notify(QCoreApplication::translate("Window", "Видимые события экспортированы"));
     } else
         notify(error, true);
 }
@@ -1527,7 +1721,7 @@ void Window::eventDialog(QTableWidget *t) {
     if (r.isEmpty())
         return;
     QDialog d(this);
-    d.setWindowTitle(QString("Событие #%1").arg(id));
+    d.setWindowTitle(QString(QCoreApplication::translate("Window", "Событие #%1")).arg(id));
     d.resize(760, 540);
     auto *l = new QVBoxLayout(&d);
     auto *text = new QTextEdit;
@@ -1542,24 +1736,28 @@ void Window::eventDialog(QTableWidget *t) {
 void Window::incidentDialog() {
     auto id = selected(incidents_);
     if (!id) {
-        notify("Выберите инцидент");
+        notify(QCoreApplication::translate("Window", "Выберите инцидент"));
         return;
     }
     auto r = store_.rows("SELECT * FROM incidents WHERE id=?", {id}).first();
     QDialog d(this);
-    d.setWindowTitle(QString("Инцидент #%1").arg(id));
+    d.setWindowTitle(QString(QCoreApplication::translate("Window", "Инцидент #%1")).arg(id));
     d.resize(620, 420);
     auto *l = new QVBoxLayout(&d);
     auto *heading = label(r["title"].toString(), "cardTitle");
     heading->setWordWrap(true);
     l->addWidget(heading);
     l->addWidget(label(r["host"].toString() + " · " + severityLabel(r["severity"].toString()), "muted"));
-    auto *status = combo({"Открыт", "Расследование", "Решён", "Ложное срабатывание"});
+    auto *status = combo({QCoreApplication::translate("Window", "Открыт"),
+                          QCoreApplication::translate("Window", "Расследование"),
+                          QCoreApplication::translate("Window", "Решён"),
+                          QCoreApplication::translate("Window", "Ложное срабатывание")});
     QStringList codes = {"open", "investigating", "resolved", "false_positive"};
     status->setCurrentIndex(codes.indexOf(r["status"].toString()));
     l->addWidget(status);
     auto *note = new QTextEdit;
-    note->setPlaceholderText("Заметка аналитика и предпринятые действия");
+    note->setPlaceholderText(
+        QCoreApplication::translate("Window", "Заметка аналитика и предпринятые действия"));
     note->setPlainText(r["note"].toString());
     l->addWidget(note);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
@@ -1574,14 +1772,15 @@ void Window::incidentDialog() {
 void Window::editCorrelation(bool editing) {
     auto id = editing ? selected(rules_) : 0;
     if (editing && !id) {
-        notify("Выберите правило");
+        notify(QCoreApplication::translate("Window", "Выберите правило"));
         return;
     }
     QVariantMap r;
     if (id)
         r = store_.rows("SELECT * FROM rules WHERE id=?", {id}).first();
     QDialog d(this);
-    d.setWindowTitle(editing ? "Изменить правило" : "Новое правило корреляции");
+    d.setWindowTitle(editing ? QCoreApplication::translate("Window", "Изменить правило")
+                             : QCoreApplication::translate("Window", "Новое правило корреляции"));
     d.setMinimumWidth(520);
     auto *f = new QFormLayout(&d);
     auto *name = new QLineEdit(r["name"].toString()), *pattern = new QLineEdit(r["pattern"].toString());
@@ -1593,13 +1792,13 @@ void Window::editCorrelation(bool editing) {
     window->setValue(r.value("window_seconds", 300).toInt());
     auto *severity = combo({"info", "low", "medium", "high", "critical"});
     severity->setCurrentText(r.value("severity", "high").toString());
-    auto *enabled = new QCheckBox("Включено");
+    auto *enabled = new QCheckBox(QCoreApplication::translate("Window", "Включено"));
     enabled->setChecked(r.value("enabled", 1).toBool());
-    f->addRow("Название", name);
-    f->addRow("Текст содержит", pattern);
-    f->addRow("Число событий", threshold);
-    f->addRow("Окно, секунд", window);
-    f->addRow("Приоритет", severity);
+    f->addRow(QCoreApplication::translate("Window", "Название"), name);
+    f->addRow(QCoreApplication::translate("Window", "Текст содержит"), pattern);
+    f->addRow(QCoreApplication::translate("Window", "Число событий"), threshold);
+    f->addRow(QCoreApplication::translate("Window", "Окно, секунд"), window);
+    f->addRow(QCoreApplication::translate("Window", "Приоритет"), severity);
     f->addRow("", enabled);
     auto *err = label("");
     err->setWordWrap(true);
@@ -1610,7 +1809,8 @@ void Window::editCorrelation(bool editing) {
     connect(buttons, &QDialogButtonBox::accepted, &d, [&] {
         if (name->text().trimmed().isEmpty() || pattern->text().trimmed().isEmpty() ||
             name->text().size() > 100 || pattern->text().size() > 256) {
-            err->setText("Укажите название (до 100) и непустой шаблон (до 256 символов)");
+            err->setText(QCoreApplication::translate(
+                "Window", "Укажите название (до 100) и непустой шаблон (до 256 символов)"));
             return;
         }
         d.accept();
@@ -1636,7 +1836,10 @@ void Window::deleteRow(QTableWidget *t, const QString &name) {
     auto id = selected(t);
     if (!id)
         return;
-    if (QMessageBox::question(this, "Удаление", QString("Удалить правило #%1?").arg(id)) != QMessageBox::Yes)
+    if (QMessageBox::question(
+            this, QCoreApplication::translate("Window", "Удаление"),
+            QString(QCoreApplication::translate("Window", "Удалить правило #%1?")).arg(id)) !=
+        QMessageBox::Yes)
         return;
     if (name == "rules")
         store_.exec("DELETE FROM matches WHERE rule_id=?", {id});
@@ -1646,26 +1849,29 @@ void Window::deleteRow(QTableWidget *t, const QString &name) {
 }
 void Window::scan() {
     if (scanner_.busy()) {
-        notify("Проверка уже выполняется");
+        notify(QCoreApplication::translate("Window", "Проверка уже выполняется"));
         return;
     }
     auto path = scanPath_->text().trimmed();
     if (path.isEmpty()) {
-        notify("Выберите файл или папку");
+        notify(QCoreApplication::translate("Window", "Выберите файл или папку"));
         return;
     }
     if (scanner_.start(path, hashes_)) {
-        scanStatus_->setText("Выполняется проверка… Можно продолжать работу или отменить её.");
+        scanStatus_->setText(QCoreApplication::translate(
+            "Window", "Выполняется проверка… Можно продолжать работу или отменить её."));
         dirty_ = true;
     }
 }
 void Window::loadHashes() {
-    auto path = QFileDialog::getOpenFileName(this, "Сигнатуры SHA-256", {}, "Текст (*.txt *.sha256)");
+    auto path =
+        QFileDialog::getOpenFileName(this, QCoreApplication::translate("Window", "Сигнатуры SHA-256"), {},
+                                     QCoreApplication::translate("Window", "Текст (*.txt *.sha256)"));
     if (path.isEmpty())
         return;
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly) || f.size() > 4 * 1024 * 1024) {
-        notify("Не удалось прочитать файл (лимит 4 МБ)", true);
+        notify(QCoreApplication::translate("Window", "Не удалось прочитать файл (лимит 4 МБ)"), true);
         return;
     }
     QMap<QString, QString> next;
@@ -1683,28 +1889,34 @@ void Window::loadHashes() {
                     match.captured(2).isEmpty() ? "Custom-SHA256" : match.captured(2));
     }
     if (invalid) {
-        notify(QString("Импорт отменён: некорректных строк — %1").arg(invalid), true);
+        notify(QString(QCoreApplication::translate("Window", "Импорт отменён: некорректных строк — %1"))
+                   .arg(invalid),
+               true);
         return;
     }
     hashes_ = next;
     store_.audit("antivirus.signatures", QString::number(hashes_.size()));
-    notify(QString("Загружено SHA-256 сигнатур: %1 (на текущую сессию)").arg(hashes_.size()));
+    notify(
+        QString(QCoreApplication::translate("Window", "Загружено SHA-256 сигнатур: %1 (на текущую сессию)"))
+            .arg(hashes_.size()));
 }
 void Window::isolate() {
     int row = findings_->currentRow();
     if (row < 0 || row >= scanFindings_.size()) {
-        notify("Выберите обнаруженный файл");
+        notify(QCoreApplication::translate("Window", "Выберите обнаруженный файл"));
         return;
     }
     auto finding = scanFindings_[row];
-    if (QMessageBox::question(this, "Карантин", "Переместить файл в карантин?\n" + finding.path) !=
-        QMessageBox::Yes)
+    if (QMessageBox::question(this, QCoreApplication::translate("Window", "Карантин"),
+                              QCoreApplication::translate("Window", "Переместить файл в карантин?\n") +
+                                  finding.path) != QMessageBox::Yes)
         return;
     QString error;
     auto root = demo_ ? QFileInfo(store_.path()).absolutePath()
                       : QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     if (Scanner::quarantine(store_, finding, QDir(root).filePath("quarantine"), &error))
-        notify("Файл изолирован. Восстановление доступно во вкладке карантина.");
+        notify(QCoreApplication::translate("Window",
+                                           "Файл изолирован. Восстановление доступно во вкладке карантина."));
     else
         notify(error, true);
     dirty_ = true;
@@ -1714,22 +1926,24 @@ void Window::restore() {
     if (!id)
         return;
     auto row = store_.rows("SELECT * FROM quarantine WHERE id=?", {id}).first();
-    if (QMessageBox::warning(this, "Восстановление",
-                             "Восстановленный файл может содержать угрозу. Продолжить?",
-                             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+    if (QMessageBox::warning(
+            this, QCoreApplication::translate("Window", "Восстановление"),
+            QCoreApplication::translate("Window", "Восстановленный файл может содержать угрозу. Продолжить?"),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
-    auto path = QFileDialog::getSaveFileName(this, "Восстановить файл", row["original"].toString());
+    auto path = QFileDialog::getSaveFileName(this, QCoreApplication::translate("Window", "Восстановить файл"),
+                                             row["original"].toString());
     if (path.isEmpty())
         return;
     QString error;
     if (Scanner::restore(store_, id, path, &error))
-        notify("Файл восстановлен без разрешения на исполнение");
+        notify(QCoreApplication::translate("Window", "Файл восстановлен без разрешения на исполнение"));
     else
         notify(error, true);
     dirty_ = true;
 }
 void Window::saveReport(bool json) {
-    auto path = QFileDialog::getSaveFileName(this, "Сохранить отчёт",
+    auto path = QFileDialog::getSaveFileName(this, QCoreApplication::translate("Window", "Сохранить отчёт"),
                                              json ? "sentinel-report.json" : "sentinel-report.html",
                                              json ? "JSON (*.json)" : "HTML (*.html)");
     if (path.isEmpty())
@@ -1744,7 +1958,8 @@ void Window::saveReport(bool json) {
             "system-ui;margin:48px;color:#17213f}table{border-collapse:collapse;width:100%}td,th{padding:"
             "10px;border-bottom:1px solid #ddd;text-align:left}</style><h1>Sentinel SIEM</h1>" +
             reportPreview_->toHtml() +
-            "<h2>Инциденты</h2><table><tr><th>Время</th><th>Угроза</th><th>Узел</th><th>Статус</th></tr>";
+            QCoreApplication::translate("Window", "<h2>Инциденты</h2><table><tr><th>Время</th><th>Угроза</"
+                                                  "th><th>Узел</th><th>Статус</th></tr>");
         for (auto r :
              store_.rows("SELECT * FROM incidents WHERE time>=? ORDER BY id DESC LIMIT 1000", {since()}))
             content += "<tr><td>" + localTime(r["time"]) + "</td><td>" +
@@ -1756,7 +1971,7 @@ void Window::saveReport(bool json) {
     QString error;
     if (save(path, content.toUtf8(), &error)) {
         store_.audit("report.export", path);
-        notify("Отчёт сохранён");
+        notify(QCoreApplication::translate("Window", "Отчёт сохранён"));
     } else
         notify(error, true);
 }
@@ -1766,16 +1981,16 @@ void Window::startCollector() {
         collectorState_->setText(QString("●  127.0.0.1:%1/udp").arg(collector_.port()));
         if (!demo_)
             settings_.setValue("collector/port", syslogPort_->value());
-        notify("Коллектор принимает события");
+        notify(QCoreApplication::translate("Window", "Коллектор принимает события"));
     } else
         notify(error, true);
 }
 QString Window::samplePcap() const {
-    const QStringList candidates{
-        QCoreApplication::applicationDirPath() + "/samples/http-lab.pcap",
-        QDir::currentPath() + "/samples/http-lab.pcap",
-        QCoreApplication::applicationDirPath() + "/../share/doc/sentinel-siem/samples/http-lab.pcap",
-        QStringLiteral("/usr/share/doc/sentinel-siem/samples/http-lab.pcap")};
+    const QStringList candidates{QCoreApplication::applicationDirPath() + "/samples/http-lab.pcap",
+                                 QDir::currentPath() + "/samples/http-lab.pcap",
+                                 QCoreApplication::applicationDirPath() +
+                                     "/../share/doc/sentinel-siem/samples/http-lab.pcap",
+                                 QStringLiteral("/usr/share/doc/sentinel-siem/samples/http-lab.pcap")};
     for (const auto &candidate : candidates) {
         const QFileInfo info(candidate);
         if (info.exists() && info.isFile())
@@ -1785,7 +2000,9 @@ QString Window::samplePcap() const {
 }
 bool Window::launchSensor(const QStringList &args) {
     if (engines_.busy()) {
-        notify("DPDK-сенсор уже запущен. Остановите его перед сменой режима.", true);
+        notify(QCoreApplication::translate("Window",
+                                           "DPDK-сенсор уже запущен. Остановите его перед сменой режима."),
+               true);
         return false;
     }
     const auto policy = ngfw_->savedDpdkPolicy();
@@ -1801,14 +2018,14 @@ bool Window::launchSensor(const QStringList &args) {
     }
     const auto bytes = QJsonDocument(policy).toJson();
     if (policyFile->write(bytes) != bytes.size() || !policyFile->flush()) {
-        notify("Не удалось записать профиль сенсора", true);
+        notify(QCoreApplication::translate("Window", "Не удалось записать профиль сенсора"), true);
         return false;
     }
     QStringList full = args;
     full.prepend(policyFile->fileName());
     full.prepend("--policy");
     if (!engines_.startDpdk(full)) {
-        notify("Не удалось запустить DPDK-сенсор", true);
+        notify(QCoreApplication::translate("Window", "Не удалось запустить DPDK-сенсор"), true);
         return false;
     }
     sensorPolicy_ = std::move(policyFile);
@@ -1832,7 +2049,7 @@ void Window::autoStartEngines() {
     const auto pcap = samplePcap();
     if (demo_ || suggested.isEmpty()) {
         if (pcap.isEmpty()) {
-            engines_.setStatus("Автозапуск: PCAP-пример не найден");
+            engines_.setStatus(QCoreApplication::translate("Window", "Автозапуск: PCAP-пример не найден"));
             return;
         }
         QStringList probe{"--pcap", pcap, "--seconds", "0"};
@@ -1847,14 +2064,18 @@ void Window::autoStartEngines() {
 }
 void Window::startSensor(bool pcap) {
     if (pcap) {
-        auto path = QFileDialog::getOpenFileName(this, "Открыть захват", {}, "PCAP (*.pcap);;Все файлы (*)");
+        auto path = QFileDialog::getOpenFileName(
+            this, QCoreApplication::translate("Window", "Открыть захват"), {},
+            QCoreApplication::translate("Window", "PCAP (*.pcap);;Все файлы (*)"));
         if (path.isEmpty())
             return;
         launchSensor({"--pcap", path, "--seconds", "0"});
         return;
     }
     if (engines_.busy()) {
-        notify("DPDK-сенсор уже запущен. Остановите его перед сменой режима.", true);
+        notify(QCoreApplication::translate("Window",
+                                           "DPDK-сенсор уже запущен. Остановите его перед сменой режима."),
+               true);
         return;
     }
     auto text = ealArgs_->text().trimmed();
@@ -1862,28 +2083,35 @@ void Window::startSensor(bool pcap) {
         text = engines_.suggestedEalArgs();
     if (text.isEmpty()) {
         QMessageBox::information(
-            this, "Нет свободного DPDK-порта",
-            "Все Ethernet-порты, привязанные к vfio-pci, уже заняты (например, VPP).\n\n"
-            "Остановите VPP и обновите список портов либо откройте PCAP для демонстрации сенсора.");
+            this, QCoreApplication::translate("Window", "Нет свободного DPDK-порта"),
+            QCoreApplication::translate(
+                "Window",
+                "Все Ethernet-порты, привязанные к vfio-pci, уже заняты (например, VPP).\n\n"
+                "Остановите VPP и обновите список портов либо откройте PCAP для демонстрации сенсора."));
         return;
     }
     const auto parts = QProcess::splitCommand(text);
     QString used;
     if (engines_.portUsedByVpp(parts, &used)) {
         QMessageBox::warning(
-            this, "Порт занят VPP",
-            QString("Порт %1 уже захвачен VPP. Один PCI-порт не может одновременно принадлежать VPP и "
-                    "DPDK-сенсору. Остановите VPP или используйте PCAP.")
+            this, QCoreApplication::translate("Window", "Порт занят VPP"),
+            QString(QCoreApplication::translate(
+                        "Window",
+                        "Порт %1 уже захвачен VPP. Один PCI-порт не может одновременно принадлежать VPP и "
+                        "DPDK-сенсору. Остановите VPP или используйте PCAP."))
                 .arg(used));
         return;
     }
     if (QMessageBox::warning(
-            this, "Запуск DPDK",
+            this, QCoreApplication::translate("Window", "Запуск DPDK"),
             inlineMode_->isChecked()
-                ? "Inline требует двух выделенных портов и перенаправляет трафик между ними. Сигнатуры "
-                  "HTTP блокируются, правила берутся из сохранённого профиля DPDK. Запустить?"
-                : "Мониторинг потребляет пакеты выбранных портов. Используйте выделенный "
-                  "SPAN/TAP-интерфейс. Запустить?",
+                ? QCoreApplication::translate(
+                      "Window",
+                      "Inline требует двух выделенных портов и перенаправляет трафик между ними. Сигнатуры "
+                      "HTTP блокируются, правила берутся из сохранённого профиля DPDK. Запустить?")
+                : QCoreApplication::translate(
+                      "Window", "Мониторинг потребляет пакеты выбранных портов. Используйте выделенный "
+                                "SPAN/TAP-интерфейс. Запустить?"),
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     QStringList args;
@@ -1897,14 +2125,16 @@ void Window::startSensor(bool pcap) {
 }
 void Window::closeEvent(QCloseEvent *event) {
     if (ngfw_->isApplying()) {
-        notify("Дождитесь завершения применения NGFW перед закрытием.", true);
+        notify(QCoreApplication::translate("Window", "Дождитесь завершения применения NGFW перед закрытием."),
+               true);
         event->ignore();
         return;
     }
     if (ngfw_->hasUnsavedChanges()) {
-        const auto answer =
-            QMessageBox::question(this, "Несохранённый профиль NGFW", "Сохранить изменения перед закрытием?",
-                                  QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+        const auto answer = QMessageBox::question(
+            this, QCoreApplication::translate("Window", "Несохранённый профиль NGFW"),
+            QCoreApplication::translate("Window", "Сохранить изменения перед закрытием?"),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
         if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !ngfw_->saveChanges())) {
             event->ignore();
             return;

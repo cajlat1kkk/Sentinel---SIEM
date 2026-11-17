@@ -18,9 +18,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("role", choices=["agent", "server"])
     parser.add_argument("config", type=Path)
+    parser.add_argument("--operator-certificate", type=Path,
+                        help="server only: provision this operator certificate after validation")
+    parser.add_argument("--operator-name", default="Administrator")
+    parser.add_argument("--operator-role", choices=["admin", "analyst"], default="admin")
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise SystemExit("Run this installer as root after reviewing your configuration")
+    os.umask(0o077)
+    if args.operator_certificate and args.role != "server":
+        raise SystemExit("--operator-certificate is valid only for the server role")
     executable = Path("/usr/bin/siem-" + args.role)
     if not executable.is_file() or executable.stat().st_uid != 0 or executable.stat().st_mode & 0o022:
         raise SystemExit("Install the package first; service binary must be root-owned and not group/world-writable")
@@ -69,6 +76,17 @@ def main():
         os.chown(candidate, account.pw_uid, account.pw_gid)
         prefix = ["runuser", "-u", user, "--"] if user != "root" else []
         subprocess.run(prefix + [str(executable), "--config", str(candidate), "--check-config"], check=True)
+        if args.operator_certificate:
+            certificate = args.operator_certificate.resolve(strict=True)
+            staged_certificate = stage / "operator-bootstrap.crt"
+            shutil.copyfile(certificate, staged_certificate)
+            staged_certificate.chmod(0o600)
+            os.chown(staged_certificate, account.pw_uid, account.pw_gid)
+            subprocess.run(prefix + [str(executable), "--config", str(candidate),
+                                      "--add-operator", str(staged_certificate),
+                                      "--name", args.operator_name,
+                                      "--role", args.operator_role], check=True)
+            staged_certificate.unlink()
         # Move the entire validated identity into a permanent private directory atomically.
         persistent = directory / (stage.name + "-active")
         config_text = candidate.read_text().replace(str(stage), str(persistent))
@@ -81,10 +99,20 @@ def main():
         if destination.exists():
             shutil.copyfile(destination, directory / (args.role + ".json.previous"))
         new_config.replace(destination)
+    unit = "sentinel-" + args.role + ".service"
     subprocess.run(["systemctl", "daemon-reload"], check=True)
-    subprocess.run(["systemctl", "enable", "sentinel-" + args.role + ".service"], check=True)
-    subprocess.run(["systemctl", "restart", "sentinel-" + args.role + ".service"], check=True)
-    subprocess.run(["systemctl", "is-active", "sentinel-" + args.role + ".service"], check=True)
+    subprocess.run(["systemctl", "enable", unit], check=True)
+    try:
+        subprocess.run(["systemctl", "restart", unit], check=True)
+        subprocess.run(["systemctl", "is-active", unit], check=True)
+    except subprocess.CalledProcessError:
+        previous = directory / (args.role + ".json.previous")
+        if previous.is_file():
+            shutil.copyfile(previous, destination)
+            destination.chmod(0o600)
+            os.chown(destination, account.pw_uid, account.pw_gid)
+            subprocess.run(["systemctl", "restart", unit], check=False)
+        raise
     print("Configured service:", args.role)
 
 

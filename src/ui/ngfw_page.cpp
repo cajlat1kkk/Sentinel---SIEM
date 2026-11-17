@@ -55,18 +55,20 @@ QComboBox *choices(const QList<QPair<QString, QString>> &items, const QString &v
     return c;
 }
 QComboBox *verdict(const QString &value) {
-    return choices({{"Разрешить", "accept"}, {"Блокировать", "drop"}}, value);
+    return choices({{QCoreApplication::translate("NgfwPage", "Разрешить"), "accept"},
+                    {QCoreApplication::translate("NgfwPage", "Блокировать"), "drop"}},
+                   value);
 }
 QString display(const QString &key) {
-    return QMap<QString, QString>{{"input", "Входящие"},
-                                  {"output", "Исходящие"},
-                                  {"forward", "Транзит"},
-                                  {"accept", "Разрешить"},
-                                  {"drop", "Блокировать"},
-                                  {"reject", "Отклонить"},
-                                  {"any", "Любой"},
-                                  {"dnat", "Проброс порта / DNAT"},
-                                  {"snat", "Подмена адреса / SNAT"},
+    return QMap<QString, QString>{{"input", QCoreApplication::translate("NgfwPage", "Входящие")},
+                                  {"output", QCoreApplication::translate("NgfwPage", "Исходящие")},
+                                  {"forward", QCoreApplication::translate("NgfwPage", "Транзит")},
+                                  {"accept", QCoreApplication::translate("NgfwPage", "Разрешить")},
+                                  {"drop", QCoreApplication::translate("NgfwPage", "Блокировать")},
+                                  {"reject", QCoreApplication::translate("NgfwPage", "Отклонить")},
+                                  {"any", QCoreApplication::translate("NgfwPage", "Любой")},
+                                  {"dnat", QCoreApplication::translate("NgfwPage", "Проброс порта / DNAT")},
+                                  {"snat", QCoreApplication::translate("NgfwPage", "Подмена адреса / SNAT")},
                                   {"masquerade", "Masquerade"}}
         .value(key, key);
 }
@@ -101,15 +103,16 @@ NgfwPage::NgfwPage(Store &store, bool demo, QWidget *parent) : QWidget(parent), 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 12, 4, 0);
     auto *bar = new QHBoxLayout;
-    bar->addWidget(new QLabel("Профиль защиты"));
-    backendBox_ = choices({{"Linux · шлюз и компьютер", "linux"},
-                           {"DPDK · транзит и HTTP", "dpdk"},
-                           {"Windows · компьютер", "windows"}});
+    bar->addWidget(new QLabel(QCoreApplication::translate("NgfwPage", "Профиль защиты")));
+    backendBox_ = choices({{QCoreApplication::translate("NgfwPage", "Linux · шлюз и компьютер"), "linux"},
+                           {QCoreApplication::translate("NgfwPage", "DPDK · транзит и HTTP"), "dpdk"},
+                           {QCoreApplication::translate("NgfwPage", "Windows · компьютер"), "windows"}});
     backendBox_->setObjectName("ngfwBackend");
-    backendBox_->setAccessibleName("Движок NGFW");
+    backendBox_->setAccessibleName(QCoreApplication::translate("NgfwPage", "Движок NGFW"));
     bar->addWidget(backendBox_);
     bar->addStretch();
-    auto *import = action("Импорт JSON"), *exportButton = action("Экспорт JSON");
+    auto *import = action(QCoreApplication::translate("NgfwPage", "Импорт JSON")),
+         *exportButton = action(QCoreApplication::translate("NgfwPage", "Экспорт JSON"));
     bar->addWidget(import);
     bar->addWidget(exportButton);
     layout->addLayout(bar);
@@ -120,7 +123,13 @@ NgfwPage::NgfwPage(Store &store, bool demo, QWidget *parent) : QWidget(parent), 
     auto *rulePage = new QWidget;
     auto *rl = new QVBoxLayout(rulePage);
     auto *rb = new QHBoxLayout;
-    const QStringList ruleActions = {"＋ Добавить", "Изменить", "Копия", "Вкл. / выкл.", "↑", "↓", "Удалить"};
+    const QStringList ruleActions = {QCoreApplication::translate("NgfwPage", "＋ Добавить"),
+                                     QCoreApplication::translate("NgfwPage", "Изменить"),
+                                     QCoreApplication::translate("NgfwPage", "Копия"),
+                                     QCoreApplication::translate("NgfwPage", "Вкл. / выкл."),
+                                     "↑",
+                                     "↓",
+                                     QCoreApplication::translate("NgfwPage", "Удалить")};
     for (int n = 0; n < ruleActions.size(); ++n) {
         auto *b = action(ruleActions[n], n == 0 ? "primary" : nullptr);
         if (n == 0)
@@ -141,8 +150,12 @@ NgfwPage::NgfwPage(Store &store, bool demo, QWidget *parent) : QWidget(parent), 
     }
     rb->addStretch();
     rl->addLayout(rb);
-    rules_ = grid(
-        {"№", "Правило", "Направление", "Источник → назначение", "Протокол / порты", "Действие", "Включено"});
+    rules_ = grid({"№", QCoreApplication::translate("NgfwPage", "Правило"),
+                   QCoreApplication::translate("NgfwPage", "Направление"),
+                   QCoreApplication::translate("NgfwPage", "Источник → назначение"),
+                   QCoreApplication::translate("NgfwPage", "Протокол / порты"),
+                   QCoreApplication::translate("NgfwPage", "Действие"),
+                   QCoreApplication::translate("NgfwPage", "Включено")});
     rules_->setObjectName("ngfwRules");
     rules_->setColumnWidth(0, 42);
     rules_->setColumnWidth(1, 180);
@@ -154,9 +167,10 @@ NgfwPage::NgfwPage(Store &store, bool demo, QWidget *parent) : QWidget(parent), 
     rules_->horizontalHeader()->setStretchLastSection(false);
     rules_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
     rl->addWidget(rules_, 1);
-    rl->addWidget(hint("Linux и DPDK: первое совпадение определяет действие. Windows: блокирующие правила "
-                       "имеют приоритет. Двойной щелчок открывает правило."));
-    tabs->addTab(rulePage, "1. Сетевые правила");
+    rl->addWidget(hint(QCoreApplication::translate(
+        "NgfwPage", "Linux и DPDK: первое совпадение определяет действие. Windows: блокирующие правила "
+                    "имеют приоритет. Двойной щелчок открывает правило.")));
+    tabs->addTab(rulePage, QCoreApplication::translate("NgfwPage", "1. Сетевые правила"));
     auto *base = new QWidget;
     auto *form = new QFormLayout(base);
     form->setSpacing(16);
@@ -165,61 +179,76 @@ NgfwPage::NgfwPage(Store &store, bool demo, QWidget *parent) : QWidget(parent), 
     forward_ = verdict("accept");
     input_->setObjectName("ngfwDefaultInput");
     forward_->setObjectName("ngfwDefaultForward");
-    form->addRow("Входящие к компьютеру (input)", input_);
-    form->addRow("Исходящие с компьютера (output)", output_);
-    form->addRow("Трафик через шлюз (forward)", forward_);
-    stateful_ = new QCheckBox("Разрешать established / related, отбрасывать invalid");
-    logDrops_ = new QCheckBox("Писать блокировки политикой по умолчанию в журнал ядра");
-    form->addRow("Состояния соединений", stateful_);
-    form->addRow("Журналирование", logDrops_);
-    form->addRow(hint(
+    form->addRow(QCoreApplication::translate("NgfwPage", "Входящие к компьютеру (input)"), input_);
+    form->addRow(QCoreApplication::translate("NgfwPage", "Исходящие с компьютера (output)"), output_);
+    form->addRow(QCoreApplication::translate("NgfwPage", "Трафик через шлюз (forward)"), forward_);
+    stateful_ = new QCheckBox(
+        QCoreApplication::translate("NgfwPage", "Разрешать established / related, отбрасывать invalid"));
+    logDrops_ = new QCheckBox(
+        QCoreApplication::translate("NgfwPage", "Писать блокировки политикой по умолчанию в журнал ядра"));
+    form->addRow(QCoreApplication::translate("NgfwPage", "Состояния соединений"), stateful_);
+    form->addRow(QCoreApplication::translate("NgfwPage", "Журналирование"), logDrops_);
+    form->addRow(hint(QCoreApplication::translate(
+        "NgfwPage",
         "Эти действия используются, если пакет не совпал ни с одним правилом. NAT и транзит требуют отдельно "
-        "настроенной маршрутизации. Приложение не изменяет адреса интерфейсов и IP forwarding."));
-    tabs->addTab(base, "2. Политика по умолчанию");
+        "настроенной маршрутизации. Приложение не изменяет адреса интерфейсов и IP forwarding.")));
+    tabs->addTab(base, QCoreApplication::translate("NgfwPage", "2. Политика по умолчанию"));
     auto *natPage = new QWidget;
     auto *nl = new QVBoxLayout(natPage);
     auto *nb = new QHBoxLayout;
-    auto *na = action("＋ Добавить NAT", "primary"), *ne = action("Изменить"), *nd = action("Удалить");
+    auto *na = action(QCoreApplication::translate("NgfwPage", "＋ Добавить NAT"), "primary"),
+         *ne = action(QCoreApplication::translate("NgfwPage", "Изменить")),
+         *nd = action(QCoreApplication::translate("NgfwPage", "Удалить"));
     for (auto *b : {na, ne, nd})
         nb->addWidget(b);
     nb->addStretch();
     nl->addLayout(nb);
-    nat_ = grid({"Название", "Тип", "Интерфейс", "Адрес / порт", "Преобразование", "Включено"});
+    nat_ = grid({QCoreApplication::translate("NgfwPage", "Название"),
+                 QCoreApplication::translate("NgfwPage", "Тип"),
+                 QCoreApplication::translate("NgfwPage", "Интерфейс"),
+                 QCoreApplication::translate("NgfwPage", "Адрес / порт"),
+                 QCoreApplication::translate("NgfwPage", "Преобразование"),
+                 QCoreApplication::translate("NgfwPage", "Включено")});
     nat_->setColumnWidth(0, 200);
     nat_->setColumnWidth(1, 190);
     nat_->setColumnWidth(3, 210);
     nl->addWidget(nat_, 1);
-    nl->addWidget(
-        hint("NAT поддерживается профилем Linux для IPv4. После преобразования пакет также должен быть "
-             "разрешён сетевыми правилами. DNAT — входной интерфейс, SNAT / masquerade — выходной."));
+    nl->addWidget(hint(QCoreApplication::translate(
+        "NgfwPage",
+        "NAT поддерживается профилем Linux для IPv4. После преобразования пакет также должен быть "
+        "разрешён сетевыми правилами. DNAT — входной интерфейс, SNAT / masquerade — выходной.")));
     tabs->addTab(natPage, "3. NAT");
     auto *inspection = new QWidget;
     auto *il = new QFormLayout(inspection);
-    inspectionMode_ = choices({{"Блокировать обнаруженные угрозы", "block"}, {"Только оповещать", "alert"}});
-    il->addRow("Реакция DPDK inline", inspectionMode_);
+    inspectionMode_ =
+        choices({{QCoreApplication::translate("NgfwPage", "Блокировать обнаруженные угрозы"), "block"},
+                 {QCoreApplication::translate("NgfwPage", "Только оповещать"), "alert"}});
+    il->addRow(QCoreApplication::translate("NgfwPage", "Реакция DPDK inline"), inspectionMode_);
     sql_ = new QCheckBox("SQL injection");
     xss_ = new QCheckBox("XSS");
     traversal_ = new QCheckBox("Path traversal");
-    fragments_ = new QCheckBox("Блокировать IP-фрагменты");
+    fragments_ = new QCheckBox(QCoreApplication::translate("NgfwPage", "Блокировать IP-фрагменты"));
     for (auto *c : {sql_, xss_, traversal_, fragments_})
         il->addRow(c);
     domains_ = new QPlainTextEdit;
     domains_->setPlaceholderText("example.test\nblocked.example.test");
     domains_->setMaximumHeight(140);
-    il->addRow("Блокируемые HTTP Host\nпо одному домену в строке", domains_);
-    il->addRow(hint("Проверка открытого HTTP выполняется DPDK. Блокировка действует в inline с двумя "
+    il->addRow(QCoreApplication::translate("NgfwPage", "Блокируемые HTTP Host\nпо одному домену в строке"),
+               domains_);
+    il->addRow(hint(QCoreApplication::translate(
+        "NgfwPage", "Проверка открытого HTTP выполняется DPDK. Блокировка действует в inline с двумя "
                     "портами; мониторинг только создаёт события. TLS не расшифровывается. Это сигнатуры "
-                    "отдельных пакетов, без сборки TCP-потока."));
-    tabs->addTab(inspection, "4. Проверка HTTP");
+                    "отдельных пакетов, без сборки TCP-потока.")));
+    tabs->addTab(inspection, QCoreApplication::translate("NgfwPage", "4. Проверка HTTP"));
     status_ = hint("");
     status_->setMinimumHeight(34);
     layout->addWidget(status_);
     auto *bottom = new QHBoxLayout;
-    auto *previewButton = action("Проверить и показать");
-    save_ = action("Сохранить профиль");
+    auto *previewButton = action(QCoreApplication::translate("NgfwPage", "Проверить и показать"));
+    save_ = action(QCoreApplication::translate("NgfwPage", "Сохранить профиль"));
     save_->setObjectName("ngfwSave");
-    rollback_ = action("Откатить применение");
-    apply_ = action("Применить к ОС", "primary");
+    rollback_ = action(QCoreApplication::translate("NgfwPage", "Откатить применение"));
+    apply_ = action(QCoreApplication::translate("NgfwPage", "Применить к ОС"), "primary");
     bottom->addWidget(previewButton);
     bottom->addWidget(save_);
     bottom->addStretch();
@@ -247,7 +276,8 @@ NgfwPage::NgfwPage(Store &store, bool demo, QWidget *parent) : QWidget(parent), 
             return;
         if (modified_) {
             auto answer = QMessageBox::question(
-                this, "Несохранённый профиль", "Сохранить изменения перед переключением?",
+                this, QCoreApplication::translate("NgfwPage", "Несохранённый профиль"),
+                QCoreApplication::translate("NgfwPage", "Сохранить изменения перед переключением?"),
                 QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
             if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !saveDraft())) {
                 QSignalBlocker block(backendBox_);
@@ -328,19 +358,28 @@ void NgfwPage::loadProfile(const QString &backend) {
     fill();
     modified_ = false;
     const auto stamp = store_.scalar("SELECT value FROM meta WHERE key=?", {key("applied_at")}).toString();
-    showStatus(stamp.isEmpty() ? "Черновик. Сохранение профиля не включает защиту."
-                               : "Последнее успешное применение из консоли: " + stamp);
+    showStatus(
+        stamp.isEmpty()
+            ? QCoreApplication::translate("NgfwPage", "Черновик. Сохранение профиля не включает защиту.")
+            : QCoreApplication::translate("NgfwPage", "Последнее успешное применение из консоли: ") + stamp);
 }
 void NgfwPage::fill() {
     loading_ = true;
     backendBox_->setCurrentIndex(backendBox_->findData(backend_));
     const bool isLinux = backend_ == "linux", dpdk = backend_ == "dpdk";
     capabilities_->setText(
-        isLinux ? "Linux: IPv4/IPv6, состояния соединений, интерфейсы, порты, журнал, лимиты и NAT IPv4."
-        : dpdk  ? "DPDK: транзитные правила IPv4/IPv6, порты и сигнатуры HTTP. Сохранённый профиль "
-                  "используется при следующем запуске сенсора."
-                : "Windows: входящие и исходящие правила Windows Firewall. Системная политика по умолчанию "
-                  "сохраняется; блокировка имеет приоритет.");
+        isLinux ? QCoreApplication::translate(
+                      "NgfwPage",
+                      "Linux: IPv4/IPv6, состояния соединений, интерфейсы, порты, журнал, лимиты и NAT IPv4.")
+        : dpdk
+            ? QCoreApplication::translate(
+                  "NgfwPage",
+                  "DPDK: транзитные правила IPv4/IPv6, порты и сигнатуры HTTP. Сохранённый профиль "
+                  "используется при следующем запуске сенсора.")
+            : QCoreApplication::translate(
+                  "NgfwPage",
+                  "Windows: входящие и исходящие правила Windows Firewall. Системная политика по умолчанию "
+                  "сохраняется; блокировка имеет приоритет."));
     const auto defaults = policy_["defaults"].toObject(), inspection = policy_["inspection"].toObject();
     for (auto entry :
          {qMakePair(input_, "input"), qMakePair(output_, "output"), qMakePair(forward_, "forward")})
@@ -377,7 +416,8 @@ void NgfwPage::fill() {
                              o["protocol"].toString().toUpper() + " / " + o["source_ports"].toString("any") +
                                  " → " + o["destination_ports"].toString("any"),
                              display(o["action"].toString()),
-                             o["enabled"].toBool(true) ? "Да" : "Нет"};
+                             o["enabled"].toBool(true) ? QCoreApplication::translate("NgfwPage", "Да")
+                                                       : QCoreApplication::translate("NgfwPage", "Нет")};
         for (int c = 0; c < cells.size(); ++c) {
             auto *i = new QTableWidgetItem(cells[c]);
             i->setToolTip(cells[c]);
@@ -396,11 +436,13 @@ void NgfwPage::fill() {
                              o["source"].toString() + " → " + o["destination"].toString() + ':' +
                                  QString::number(o["port"].toInt()),
                              o["to_address"].toString() + ':' + QString::number(o["to_port"].toInt()),
-                             o["enabled"].toBool(true) ? "Да" : "Нет"};
+                             o["enabled"].toBool(true) ? QCoreApplication::translate("NgfwPage", "Да")
+                                                       : QCoreApplication::translate("NgfwPage", "Нет")};
         for (int c = 0; c < cells.size(); ++c)
             nat_->setItem(r, c, new QTableWidgetItem(cells[c]));
     }
-    apply_->setText(dpdk ? "Сохранить для сенсора" : "Применить к ОС");
+    apply_->setText(dpdk ? QCoreApplication::translate("NgfwPage", "Сохранить для сенсора")
+                         : QCoreApplication::translate("NgfwPage", "Применить к ОС"));
     rollback_->setEnabled(!dpdk);
     loading_ = false;
 }
@@ -408,7 +450,8 @@ void NgfwPage::changed() {
     if (loading_)
         return;
     modified_ = true;
-    showStatus("Есть несохранённые изменения. Проверяйте профиль перед применением.");
+    showStatus(QCoreApplication::translate(
+        "NgfwPage", "Есть несохранённые изменения. Проверяйте профиль перед применением."));
 }
 QJsonObject NgfwPage::collect() const {
     auto p = policy_;
@@ -447,8 +490,11 @@ bool NgfwPage::saveDraft() {
     }
     const auto json = QString::fromUtf8(QJsonDocument(p).toJson(QJsonDocument::Compact));
     if (!store_.compareAndSetMeta(key("draft"), loadedJson_, json)) {
-        showStatus("Профиль изменён другой консолью. Экспортируйте свои изменения и откройте профиль заново.",
-                   true);
+        showStatus(
+            QCoreApplication::translate(
+                "NgfwPage",
+                "Профиль изменён другой консолью. Экспортируйте свои изменения и откройте профиль заново."),
+            true);
         return false;
     }
     loadedJson_ = json;
@@ -457,8 +503,10 @@ bool NgfwPage::saveDraft() {
     store_.audit("ngfw.draft.saved", backend_);
     showStatus(
         backend_ == "dpdk"
-            ? "Профиль сохранён. Перезапустите сенсор в разделе «Сетевой движок», чтобы использовать его."
-            : "Профиль сохранён. Для включения правил нажмите «Применить к ОС».");
+            ? QCoreApplication::translate("NgfwPage", "Профиль сохранён. Перезапустите сенсор в разделе "
+                                                      "«Сетевой движок», чтобы использовать его.")
+            : QCoreApplication::translate(
+                  "NgfwPage", "Профиль сохранён. Для включения правил нажмите «Применить к ОС»."));
     return true;
 }
 void NgfwPage::showStatus(const QString &text, bool error) {
@@ -473,12 +521,13 @@ void NgfwPage::editEntry(bool isNat, bool editing) {
     auto array = policy_[isNat ? "nat" : "rules"].toArray();
     int index = editing ? table->currentRow() : -1;
     if (editing && index < 0) {
-        showStatus("Выберите строку в таблице.");
+        showStatus(QCoreApplication::translate("NgfwPage", "Выберите строку в таблице."));
         return;
     }
     QJsonObject o = editing ? array[index].toObject() : QJsonObject();
     QDialog dialog(this);
-    dialog.setWindowTitle(isNat ? "Правило NAT" : "Сетевое правило");
+    dialog.setWindowTitle(isNat ? QCoreApplication::translate("NgfwPage", "Правило NAT")
+                                : QCoreApplication::translate("NgfwPage", "Сетевое правило"));
     dialog.resize(700, isNat ? 670 : 760);
     auto *outer = new QVBoxLayout(&dialog);
     auto *scroll = new QScrollArea;
@@ -494,14 +543,18 @@ void NgfwPage::editEntry(bool isNat, bool editing) {
         form->addRow(label, e);
         return e;
     };
-    auto *name = line("Название", "name");
+    auto *name = line(QCoreApplication::translate("NgfwPage", "Название"), "name");
     name->setObjectName("ngfwRuleName");
-    auto *source = line("Адрес источника / CIDR", "source", "any");
-    auto *destination = line("Адрес назначения / CIDR", "destination", "any");
-    auto *protocol = choices({{"Любой", "any"}, {"TCP", "tcp"}, {"UDP", "udp"}, {"ICMP", "icmp"}},
+    auto *source = line(QCoreApplication::translate("NgfwPage", "Адрес источника / CIDR"), "source", "any");
+    auto *destination =
+        line(QCoreApplication::translate("NgfwPage", "Адрес назначения / CIDR"), "destination", "any");
+    auto *protocol = choices({{QCoreApplication::translate("NgfwPage", "Любой"), "any"},
+                              {"TCP", "tcp"},
+                              {"UDP", "udp"},
+                              {"ICMP", "icmp"}},
                              o["protocol"].toString("tcp"));
-    form->addRow("Протокол", protocol);
-    auto *enabled = new QCheckBox("Правило включено");
+    form->addRow(QCoreApplication::translate("NgfwPage", "Протокол"), protocol);
+    auto *enabled = new QCheckBox(QCoreApplication::translate("NgfwPage", "Правило включено"));
     enabled->setChecked(o["enabled"].toBool(true));
     QComboBox *direction = nullptr, *verdictBox = nullptr, *natType = nullptr;
     QLineEdit *sourcePorts = nullptr, *destinationPorts = nullptr, *in = nullptr, *out = nullptr,
@@ -510,67 +563,86 @@ void NgfwPage::editEntry(bool isNat, bool editing) {
     QSpinBox *limit = nullptr, *port = nullptr, *targetPort = nullptr;
     if (!isNat) {
         direction = choices(
-            backend_ == "dpdk"      ? QList<QPair<QString, QString>>{{"Через шлюз (forward)", "forward"}}
-            : backend_ == "windows" ? QList<QPair<QString, QString>>{{"К компьютеру (input)", "input"},
-                                                                     {"С компьютера (output)", "output"}}
-                                    : QList<QPair<QString, QString>>{{"К компьютеру (input)", "input"},
-                                                                     {"С компьютера (output)", "output"},
-                                                                     {"Через шлюз (forward)", "forward"}},
+            backend_ == "dpdk" ? QList<QPair<QString, QString>>{{QCoreApplication::translate(
+                                                                     "NgfwPage", "Через шлюз (forward)"),
+                                                                 "forward"}}
+            : backend_ == "windows"
+                ? QList<QPair<QString, QString>>{{QCoreApplication::translate("NgfwPage",
+                                                                              "К компьютеру (input)"),
+                                                  "input"},
+                                                 {QCoreApplication::translate("NgfwPage",
+                                                                              "С компьютера (output)"),
+                                                  "output"}}
+                : QList<QPair<QString, QString>>{{QCoreApplication::translate("NgfwPage",
+                                                                              "К компьютеру (input)"),
+                                                  "input"},
+                                                 {QCoreApplication::translate("NgfwPage",
+                                                                              "С компьютера (output)"),
+                                                  "output"},
+                                                 {QCoreApplication::translate("NgfwPage",
+                                                                              "Через шлюз (forward)"),
+                                                  "forward"}},
             o["direction"].toString(backend_ == "dpdk" ? "forward" : "input"));
-        form->addRow("Направление", direction);
-        sourcePorts = line("Порты источника", "source_ports", "any");
-        destinationPorts = line("Порты назначения", "destination_ports", "any");
-        sourcePorts->setPlaceholderText("any или 1024-65535");
+        form->addRow(QCoreApplication::translate("NgfwPage", "Направление"), direction);
+        sourcePorts = line(QCoreApplication::translate("NgfwPage", "Порты источника"), "source_ports", "any");
+        destinationPorts =
+            line(QCoreApplication::translate("NgfwPage", "Порты назначения"), "destination_ports", "any");
+        sourcePorts->setPlaceholderText(QCoreApplication::translate("NgfwPage", "any или 1024-65535"));
         destinationPorts->setPlaceholderText("80,443,8000-8080");
-        form->addRow(hint("any — любой адрес или порт. Несколько портов разделяйте запятой; диапазон — "
-                          "дефисом. Порты применяются только к TCP / UDP."));
-        verdictBox =
-            choices({{"Разрешить", "accept"}, {"Блокировать", "drop"}, {"Отклонить с ответом", "reject"}},
-                    o["action"].toString("drop"));
-        form->addRow("Действие", verdictBox);
-        in = line("Входной интерфейс", "in_interface", "any");
-        out = line("Выходной интерфейс", "out_interface", "any");
+        form->addRow(hint(QCoreApplication::translate(
+            "NgfwPage", "any — любой адрес или порт. Несколько портов разделяйте запятой; диапазон — "
+                        "дефисом. Порты применяются только к TCP / UDP.")));
+        verdictBox = choices({{QCoreApplication::translate("NgfwPage", "Разрешить"), "accept"},
+                              {QCoreApplication::translate("NgfwPage", "Блокировать"), "drop"},
+                              {QCoreApplication::translate("NgfwPage", "Отклонить с ответом"), "reject"}},
+                             o["action"].toString("drop"));
+        form->addRow(QCoreApplication::translate("NgfwPage", "Действие"), verdictBox);
+        in = line(QCoreApplication::translate("NgfwPage", "Входной интерфейс"), "in_interface", "any");
+        out = line(QCoreApplication::translate("NgfwPage", "Выходной интерфейс"), "out_interface", "any");
         in->setEnabled(backend_ == "linux");
         out->setEnabled(backend_ == "linux");
-        logging = new QCheckBox("Журналировать совпадения (Linux)");
+        logging = new QCheckBox(QCoreApplication::translate("NgfwPage", "Журналировать совпадения (Linux)"));
         logging->setChecked(o["log"].toBool());
         logging->setEnabled(backend_ == "linux");
         form->addRow(logging);
         limit = new QSpinBox;
         limit->setRange(0, 1000000);
-        limit->setSpecialValueText("Без лимита");
+        limit->setSpecialValueText(QCoreApplication::translate("NgfwPage", "Без лимита"));
         limit->setValue(o["rate_limit"].toInt());
         limit->setEnabled(backend_ == "linux");
-        form->addRow("Совпадений в секунду (Linux)", limit);
-        form->addRow(
-            hint("Лимит доступен для разрешающих правил. Пакеты сверх лимита блокируются этим правилом."));
-        comment = line("Комментарий", "comment");
+        form->addRow(QCoreApplication::translate("NgfwPage", "Совпадений в секунду (Linux)"), limit);
+        form->addRow(hint(QCoreApplication::translate(
+            "NgfwPage",
+            "Лимит доступен для разрешающих правил. Пакеты сверх лимита блокируются этим правилом.")));
+        comment = line(QCoreApplication::translate("NgfwPage", "Комментарий"), "comment");
     } else {
-        natType = choices({{"Проброс назначения (DNAT)", "dnat"},
-                           {"Подмена источника (SNAT)", "snat"},
-                           {"Адрес внешнего интерфейса (masquerade)", "masquerade"}},
+        natType = choices({{QCoreApplication::translate("NgfwPage", "Проброс назначения (DNAT)"), "dnat"},
+                           {QCoreApplication::translate("NgfwPage", "Подмена источника (SNAT)"), "snat"},
+                           {QCoreApplication::translate("NgfwPage", "Адрес внешнего интерфейса (masquerade)"),
+                            "masquerade"}},
                           o["type"].toString("masquerade"));
-        form->addRow("Тип преобразования", natType);
-        iface = line("Интерфейс", "interface", "any");
+        form->addRow(QCoreApplication::translate("NgfwPage", "Тип преобразования"), natType);
+        iface = line(QCoreApplication::translate("NgfwPage", "Интерфейс"), "interface", "any");
         port = new QSpinBox;
         port->setRange(0, 65535);
-        port->setSpecialValueText("Любой");
+        port->setSpecialValueText(QCoreApplication::translate("NgfwPage", "Любой"));
         port->setValue(o["port"].toInt());
-        form->addRow("Исходный порт назначения", port);
-        target = line("Новый IPv4-адрес", "to_address");
+        form->addRow(QCoreApplication::translate("NgfwPage", "Исходный порт назначения"), port);
+        target = line(QCoreApplication::translate("NgfwPage", "Новый IPv4-адрес"), "to_address");
         targetPort = new QSpinBox;
         targetPort->setRange(0, 65535);
-        targetPort->setSpecialValueText("Без изменения");
+        targetPort->setSpecialValueText(QCoreApplication::translate("NgfwPage", "Без изменения"));
         targetPort->setValue(o["to_port"].toInt());
-        form->addRow("Новый порт", targetPort);
-        form->addRow(hint("Для masquerade оставьте новый адрес пустым и новый порт равным 0. Для DNAT / SNAT "
-                          "укажите один IPv4-адрес. NAT доступен только в Linux."));
+        form->addRow(QCoreApplication::translate("NgfwPage", "Новый порт"), targetPort);
+        form->addRow(hint(QCoreApplication::translate(
+            "NgfwPage", "Для masquerade оставьте новый адрес пустым и новый порт равным 0. Для DNAT / SNAT "
+                        "укажите один IPv4-адрес. NAT доступен только в Linux.")));
     }
     form->addRow(enabled);
     auto *errorLabel = hint("");
     outer->addWidget(errorLabel);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
-    buttons->button(QDialogButtonBox::Save)->setText("Готово");
+    buttons->button(QDialogButtonBox::Save)->setText(QCoreApplication::translate("NgfwPage", "Готово"));
     outer->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
@@ -621,7 +693,7 @@ void NgfwPage::removeEntry(bool isNat) {
     auto *t = isNat ? nat_ : rules_;
     const int row = t->currentRow();
     if (row < 0) {
-        showStatus("Выберите строку в таблице.");
+        showStatus(QCoreApplication::translate("NgfwPage", "Выберите строку в таблице."));
         return;
     }
     policy_ = collect();
@@ -663,7 +735,7 @@ void NgfwPage::duplicateRule() {
         return;
     auto a = policy_["rules"].toArray();
     auto r = a[row].toObject();
-    r["name"] = r["name"].toString() + " (копия)";
+    r["name"] = r["name"].toString() + QCoreApplication::translate("NgfwPage", " (копия)");
     a.insert(row + 1, r);
     policy_ = collect();
     policy_["rules"] = a;
@@ -672,12 +744,15 @@ void NgfwPage::duplicateRule() {
     changed();
 }
 void NgfwPage::importPolicy() {
-    auto path = QFileDialog::getOpenFileName(this, "Импорт профиля NGFW", {}, "JSON (*.json)");
+    auto path = QFileDialog::getOpenFileName(
+        this, QCoreApplication::translate("NgfwPage", "Импорт профиля NGFW"), {}, "JSON (*.json)");
     if (path.isEmpty())
         return;
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024) {
-        showStatus("Не удалось прочитать файл или размер превышает 2 МБ.", true);
+        showStatus(
+            QCoreApplication::translate("NgfwPage", "Не удалось прочитать файл или размер превышает 2 МБ."),
+            true);
         return;
     }
     QJsonParseError parse;
@@ -694,13 +769,16 @@ void NgfwPage::importPolicy() {
         return;
     }
     if (modified_ &&
-        QMessageBox::question(this, "Заменить черновик",
-                              "Заменить несохранённые изменения импортируемым профилем?") != QMessageBox::Yes)
+        QMessageBox::question(this, QCoreApplication::translate("NgfwPage", "Заменить черновик"),
+                              QCoreApplication::translate(
+                                  "NgfwPage", "Заменить несохранённые изменения импортируемым профилем?")) !=
+            QMessageBox::Yes)
         return;
     policy_ = p;
     fill();
     changed();
-    showStatus("Профиль импортирован в редактор. Сохраните его после проверки.");
+    showStatus(QCoreApplication::translate("NgfwPage",
+                                           "Профиль импортирован в редактор. Сохраните его после проверки."));
 }
 void NgfwPage::exportPolicy() {
     const auto p = collect();
@@ -709,8 +787,9 @@ void NgfwPage::exportPolicy() {
         showStatus(error, true);
         return;
     }
-    auto path = QFileDialog::getSaveFileName(this, "Экспорт профиля NGFW", "sentinel-" + backend_ + ".json",
-                                             "JSON (*.json)");
+    auto path =
+        QFileDialog::getSaveFileName(this, QCoreApplication::translate("NgfwPage", "Экспорт профиля NGFW"),
+                                     "sentinel-" + backend_ + ".json", "JSON (*.json)");
     if (path.isEmpty())
         return;
     QSaveFile file(path);
@@ -719,7 +798,7 @@ void NgfwPage::exportPolicy() {
         showStatus(file.errorString(), true);
         return;
     }
-    showStatus("Профиль экспортирован: " + path);
+    showStatus(QCoreApplication::translate("NgfwPage", "Профиль экспортирован: ") + path);
 }
 void NgfwPage::preview() {
     auto p = collect();
@@ -730,10 +809,11 @@ void NgfwPage::preview() {
     }
     QString compileError;
     QDialog dialog(this);
-    dialog.setWindowTitle("Проверенный профиль · " + backend_);
+    dialog.setWindowTitle(QCoreApplication::translate("NgfwPage", "Проверенный профиль · ") + backend_);
     dialog.resize(850, 640);
     auto *l = new QVBoxLayout(&dialog);
-    l->addWidget(hint("Проверка пройдена. Профиль ещё не применён."));
+    l->addWidget(
+        hint(QCoreApplication::translate("NgfwPage", "Проверка пройдена. Профиль ещё не применён.")));
     auto *text = new QPlainTextEdit;
     text->setReadOnly(true);
     text->setPlainText(backend_ == "linux" ? compileNftPolicy(p, &compileError)
@@ -752,7 +832,9 @@ void NgfwPage::applyPolicy(bool rollback) {
         return;
     }
     if (demo_) {
-        showStatus("В деморежиме доступны редактор и экспорт. Для применения подключитесь к PostgreSQL.",
+        showStatus(QCoreApplication::translate(
+                       "NgfwPage",
+                       "В деморежиме доступны редактор и экспорт. Для применения подключитесь к PostgreSQL."),
                    true);
         return;
     }
@@ -762,7 +844,8 @@ void NgfwPage::applyPolicy(bool rollback) {
     const QString native = "linux";
 #endif
     if (backend_ != native) {
-        showStatus("Этот профиль нужно применять на " + backend_ + ". Здесь доступны настройка и экспорт.",
+        showStatus(QCoreApplication::translate("NgfwPage", "Этот профиль нужно применять на ") + backend_ +
+                       QCoreApplication::translate("NgfwPage", ". Здесь доступны настройка и экспорт."),
                    true);
         return;
     }
@@ -770,7 +853,8 @@ void NgfwPage::applyPolicy(bool rollback) {
     if (rollback) {
         auto previous = store_.scalar("SELECT value FROM meta WHERE key=?", {key("previous")}).toString();
         if (previous.isEmpty()) {
-            showStatus("Нет предыдущего успешного применения для отката.");
+            showStatus(
+                QCoreApplication::translate("NgfwPage", "Нет предыдущего успешного применения для отката."));
             return;
         }
         p = QJsonDocument::fromJson(previous.toUtf8()).object();
@@ -780,12 +864,16 @@ void NgfwPage::applyPolicy(bool rollback) {
         showStatus(error, true);
         return;
     }
-    QMessageBox confirm(QMessageBox::Warning, rollback ? "Откатить NGFW" : "Применить NGFW",
-                        "Будет изменена политика Sentinel на этом компьютере. Блокирующие правила могут "
+    QMessageBox confirm(
+        QMessageBox::Warning,
+        rollback ? QCoreApplication::translate("NgfwPage", "Откатить NGFW")
+                 : QCoreApplication::translate("NgfwPage", "Применить NGFW"),
+        QCoreApplication::translate(
+            "NgfwPage", "Будет изменена политика Sentinel на этом компьютере. Блокирующие правила могут "
                         "прервать соединения.\n"
                         "Linux заменяет таблицу Sentinel атомарно. Windows изменяет только правила Sentinel; "
-                        "применение не атомарно.",
-                        QMessageBox::Apply | QMessageBox::Cancel, this);
+                        "применение не атомарно."),
+        QMessageBox::Apply | QMessageBox::Cancel, this);
     confirm.setDefaultButton(QMessageBox::Cancel);
     confirm.setDetailedText(QString::fromUtf8(QJsonDocument(p).toJson()));
     if (confirm.exec() != QMessageBox::Apply)
@@ -800,19 +888,21 @@ void NgfwPage::applyPolicy(bool rollback) {
     }
     const auto bytes = QJsonDocument(p).toJson();
     if (temporary_->write(bytes) != bytes.size() || !temporary_->flush()) {
-        showStatus("Не удалось записать профиль.", true);
+        showStatus(QCoreApplication::translate("NgfwPage", "Не удалось записать профиль."), true);
         temporary_.reset();
         return;
     }
     pending_ = p;
     const auto helper = QCoreApplication::applicationDirPath() + "/siem-firewall-helper";
     setEnabled(false);
-    showStatus("Ожидание прав администратора и применения…");
+    showStatus(QCoreApplication::translate("NgfwPage", "Ожидание прав администратора и применения…"));
 #ifdef Q_OS_WIN
     const auto filename = temporary_->fileName();
     auto *watch = new QFutureWatcher<int>(this);
     connect(watch, &QFutureWatcher<int>::finished, this, [this, watch] {
-        finished(watch->result() == 0, QString("Код Windows helper: %1").arg(watch->result()));
+        finished(
+            watch->result() == 0,
+            QString(QCoreApplication::translate("NgfwPage", "Код Windows helper: %1")).arg(watch->result()));
         watch->deleteLater();
     });
     watch->setFuture(QtConcurrent::run([helper, filename] {
@@ -836,7 +926,8 @@ void NgfwPage::applyPolicy(bool rollback) {
 #else
     auto pkexec = QStandardPaths::findExecutable("pkexec");
     if (pkexec.isEmpty()) {
-        finished(false, "Установите polkit (pkexec) для запроса прав администратора.");
+        finished(false, QCoreApplication::translate(
+                            "NgfwPage", "Установите polkit (pkexec) для запроса прав администратора."));
         return;
     }
     process_.start(pkexec, {helper, "--apply", temporary_->fileName()});
@@ -853,15 +944,20 @@ void NgfwPage::finished(bool success, const QString &message) {
         } else
             store_.audit("ngfw.error", backend_ + ": " + message.left(8192));
     } catch (const std::exception &e) {
-        showStatus((success ? QString("Правила применены к ОС, но история и откат не сохранены: ")
-                            : QString("Применение не подтверждено, журнал недоступен: ")) +
+        showStatus((success ? QString(QCoreApplication::translate(
+                                  "NgfwPage", "Правила применены к ОС, но история и откат не сохранены: "))
+                            : QString(QCoreApplication::translate(
+                                  "NgfwPage", "Применение не подтверждено, журнал недоступен: "))) +
                        QString::fromUtf8(e.what()),
                    true);
         return;
     }
-    showStatus(success ? "Политика применена. История сохранена в журнале действий."
-                       : "Применение не подтверждено: " + message,
+    showStatus(success ? QCoreApplication::translate(
+                             "NgfwPage", "Политика применена. История сохранена в журнале действий.")
+                       : QCoreApplication::translate("NgfwPage", "Применение не подтверждено: ") + message,
                !success);
-    emit notification(success ? "NGFW: политика применена" : "NGFW: ошибка применения", !success);
+    emit notification(success ? QCoreApplication::translate("NgfwPage", "NGFW: политика применена")
+                              : QCoreApplication::translate("NgfwPage", "NGFW: ошибка применения"),
+                      !success);
 }
 } // namespace siem

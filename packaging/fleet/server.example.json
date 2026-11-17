@@ -5,6 +5,21 @@
   "certificate": "/secure/server.crt",
   "private_key": "/secure/server.key",
   "retention_days": 90,
+  "radar": {
+    "enabled": false,
+    "listen": "127.0.0.1",
+    "port": 4740,
+    "exporter": "127.0.0.1",
+    "window_seconds": 60,
+    "scan_ports": 30,
+    "scan_hosts": 10,
+    "burst_bytes": 104857600
+  },
+  "metrics": {
+    "enabled": true,
+    "listen": "127.0.0.1",
+    "port": 9108
+  },
   "database": {
     "host": "127.0.0.1",
     "port": 5432,

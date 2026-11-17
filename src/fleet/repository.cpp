@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <QHostAddress>
 
 namespace siem::fleet {
 static QString json(const QJsonObject &o) {
@@ -44,17 +45,59 @@ Repository::Repository(Store &s) : store_(s) {
         store_.exec(
             "INSERT INTO schema_migrations(version,applied) VALUES(3,?) ON CONFLICT(version) DO NOTHING",
             {now()});
-        // Every enrolled device is also an operator with the least-privileged role 'user'. The admin can
-        // promote it later (operators.setrole). This backfill is idempotent and never un-revokes anyone.
-        store_.exec("INSERT INTO fleet_operators(identity,name,role,revoked) "
-                    "SELECT identity,hostname,'user',0 FROM fleet_devices WHERE revoked=0 "
-                    "ON CONFLICT(identity) DO NOTHING");
+        // Version 3 briefly created a shared device/operator role. Remove those stale identities before
+        // enforcing the original separation between endpoint and operator certificates.
+        store_.exec("DELETE FROM fleet_operators WHERE role='user'");
+        store_.exec(
+            "INSERT INTO schema_migrations(version,applied) VALUES(4,?) ON CONFLICT(version) DO NOTHING",
+            {now()});
+        store_.exec("CREATE TABLE IF NOT EXISTS radar_flows(id TEXT PRIMARY KEY,seen TEXT NOT NULL,"
+                    "sensor TEXT NOT NULL,source TEXT NOT NULL,destination TEXT NOT NULL,"
+                    "source_port INTEGER NOT NULL,destination_port INTEGER NOT NULL,protocol INTEGER NOT NULL,"
+                    "packets BIGINT NOT NULL,bytes BIGINT NOT NULL)");
+        store_.exec("CREATE INDEX IF NOT EXISTS radar_flows_seen ON radar_flows(seen)");
+        store_.exec("CREATE INDEX IF NOT EXISTS radar_flows_source ON radar_flows(source,seen)");
+        store_.exec("CREATE TABLE IF NOT EXISTS fleet_device_addresses(identity TEXT NOT NULL REFERENCES fleet_devices(identity),"
+                    "address TEXT NOT NULL,PRIMARY KEY(identity,address))");
+        store_.exec("CREATE INDEX IF NOT EXISTS fleet_device_addresses_ip ON fleet_device_addresses(address)");
+        store_.exec("INSERT INTO schema_migrations(version,applied) VALUES(5,?) ON CONFLICT(version) DO NOTHING", {now()});
     });
+}
+void Repository::ingestRadar(const QJsonArray &flows, const QJsonArray &alerts) {
+    require(flows.size() <= 2000 && alerts.size() <= 256, "Radar batch too large");
+    store_.atomic([&] {
+        for (const auto &v : flows) {
+            const auto r = v.toObject();
+            store_.exec("INSERT INTO radar_flows(id,seen,sensor,source,destination,source_port,destination_port,protocol,packets,bytes) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET seen=excluded.seen,"
+                        "packets=radar_flows.packets+excluded.packets,bytes=radar_flows.bytes+excluded.bytes",
+                        {r["id"].toString(), r["seen"].toString(), r["sensor"].toString(), r["source"].toString(),
+                         r["destination"].toString(), r["source_port"].toInt(), r["destination_port"].toInt(), r["protocol"].toInt(),
+                         r["packets"].toInteger(), r["bytes"].toInteger()});
+        }
+    });
+    for (const auto &v : alerts) {
+        const auto a = v.toObject();
+        Event e;
+        e.source = "vpp-radar"; e.category = "network"; e.host = a["source"].toString(); e.ip = e.host;
+        e.severity = a["kind"].toString() == "scan" ? "high" : "medium";
+        e.message = a["message"].toString(); e.raw = a;
+        store_.ingest(e);
+    }
+    retainRadar();
+}
+void Repository::retainRadar() {
+    store_.exec("DELETE FROM radar_flows WHERE seen<?", {QDateTime::currentDateTimeUtc().addDays(-1).toString(Qt::ISODateWithMs)});
+    const auto excess = store_.scalar("SELECT COUNT(*) FROM radar_flows").toLongLong() - 100000;
+    if (excess > 0)
+        store_.exec("DELETE FROM radar_flows WHERE id IN (SELECT id FROM radar_flows ORDER BY seen,id LIMIT ?)", {excess});
 }
 void Repository::addOperator(const QString &id, const QString &name, const QString &role) {
     require(fingerprintValid(id) && !name.isEmpty() && name.size() <= 128 &&
-                QStringList{"user", "analyst", "admin"}.contains(role),
+                QStringList{"analyst", "admin"}.contains(role),
             "Invalid operator");
+    require(!store_.scalar("SELECT identity FROM fleet_devices WHERE identity=?", {id}).isValid(),
+            "Device certificate cannot be an operator");
     store_.atomic([&] {
         store_.exec("INSERT INTO fleet_operators(identity,name,role) VALUES(?,?,?) ON CONFLICT(identity) DO "
                     "UPDATE SET name=excluded.name,role=excluded.role,revoked=0",
@@ -74,16 +117,44 @@ QJsonObject Repository::policy(const QString &group) const {
             {"policy", QJsonDocument::fromJson(r[0]["policy"].toString().toUtf8()).object()}};
 }
 
-QString Repository::ownHostname(const QString &identity) const {
-    auto r = store_.rows("SELECT hostname FROM fleet_devices WHERE identity=? AND revoked=0", {identity});
-    return r.isEmpty() ? QString() : r[0]["hostname"].toString();
+QJsonObject Repository::monitoringSnapshot() const {
+    const auto since = QDateTime::currentDateTimeUtc().addDays(-1).toString(Qt::ISODateWithMs);
+    const auto onlineSince = QDateTime::currentDateTimeUtc().addSecs(-90).toString(Qt::ISODateWithMs);
+    // Every label exposed by MetricsRegistry is fixed in source. Host names,
+    // certificate fingerprints, messages and arbitrary group names are never
+    // exported, avoiding both secret leakage and unbounded Prometheus series.
+    return {
+        {"devices_active", store_.scalar("SELECT COUNT(*) FROM fleet_devices WHERE revoked=0").toDouble()},
+        {"devices_online",
+         store_.scalar("SELECT COUNT(*) FROM fleet_devices WHERE revoked=0 AND last_seen>?", {onlineSince})
+             .toDouble()},
+        {"devices_revoked", store_.scalar("SELECT COUNT(*) FROM fleet_devices WHERE revoked<>0").toDouble()},
+        {"events", store_.scalar("SELECT COUNT(*) FROM events").toDouble()},
+        {"events_24h", store_.scalar("SELECT COUNT(*) FROM events WHERE received>?", {since}).toDouble()},
+        {"incidents_open", store_.scalar("SELECT COUNT(*) FROM incidents WHERE status='open'").toDouble()},
+        {"incidents_investigating",
+         store_.scalar("SELECT COUNT(*) FROM incidents WHERE status='investigating'").toDouble()},
+        {"incidents_resolved",
+         store_.scalar("SELECT COUNT(*) FROM incidents WHERE status='resolved'").toDouble()},
+        {"incidents_false_positive",
+         store_.scalar("SELECT COUNT(*) FROM incidents WHERE status='false_positive'").toDouble()},
+        {"commands_queued",
+         store_.scalar("SELECT COUNT(*) FROM fleet_commands WHERE state='queued'").toDouble()},
+        {"commands_complete",
+         store_.scalar("SELECT COUNT(*) FROM fleet_commands WHERE state='complete'").toDouble()},
+        {"deliveries", store_.scalar("SELECT COUNT(*) FROM deliveries").toDouble()},
+        {"groups", store_.scalar("SELECT COUNT(*) FROM fleet_groups").toDouble()},
+        {"operators", store_.scalar("SELECT COUNT(*) FROM fleet_operators WHERE revoked=0").toDouble()}};
 }
+
 QJsonObject Repository::enroll(const QString &id, const QJsonObject &p) {
     auto device = store_.rows("SELECT revoked FROM fleet_devices WHERE identity=?", {id});
     if (!device.isEmpty()) {
         require(!device[0]["revoked"].toBool(), "Device revoked");
         return {{"enrolled", true}, {"identity", id}};
     }
+    require(!store_.scalar("SELECT identity FROM fleet_operators WHERE identity=?", {id}).isValid(),
+            "Operator certificate cannot enroll as a device");
     const auto token = p["token"].toString();
     const auto host = p["hostname"].toString();
     const auto platform = p["platform"].toString();
@@ -99,10 +170,6 @@ QJsonObject Repository::enroll(const QString &id, const QJsonObject &p) {
         store_.exec("INSERT INTO fleet_devices(identity,hostname,platform,group_name,enrolled,last_seen) "
                     "VALUES(?,?,?,?,?,?)",
                     {id, host, platform, rows[0]["group_name"], now(), now()});
-        // A connected PC starts as the least-privileged 'user' operator; the admin promotes it later.
-        store_.exec("INSERT INTO fleet_operators(identity,name,role) VALUES(?,?,'user') "
-                    "ON CONFLICT(identity) DO NOTHING",
-                    {id, host});
         audit(id, "device.enroll", {{"hostname", host}, {"platform", platform}});
     });
     return {{"enrolled", true}, {"identity", id}};
@@ -142,6 +209,16 @@ QJsonObject Repository::poll(const QString &id, const QJsonObject &p) {
             audit(id, "command.result", result);
     }
     store_.exec("UPDATE fleet_devices SET last_seen=?,health=? WHERE identity=?", {now(), json(health), id});
+    store_.atomic([&] {
+        store_.exec("DELETE FROM fleet_device_addresses WHERE identity=?", {id});
+        const auto addresses = health["addresses"].toArray();
+        for (int i = 0; i < qMin(32, int(addresses.size())); ++i) {
+            const QHostAddress address(addresses[i].toString());
+            if (address.isNull() || address.isLoopback() || address.isMulticast() || address.isLinkLocal()) continue;
+            store_.exec("INSERT INTO fleet_device_addresses(identity,address) VALUES(?,?) ON CONFLICT(identity,address) DO NOTHING",
+                        {id, address.toString()});
+        }
+    });
     auto desired = policy(device["group_name"].toString());
     auto commands = records(store_.rows("SELECT id,kind,payload FROM fleet_commands WHERE device=? AND "
                                         "state='queued' ORDER BY created LIMIT 8",
@@ -167,8 +244,8 @@ QJsonObject Repository::dispatch(const QString &id, const QString &method, const
     const auto role = operators[0]["role"].toString();
     const QStringList readMethods{"session",       "devices.list",   "groups.list",     "policies.get",
                                   "events.list",   "incidents.list", "rules.list",      "audit.list",
-                                  "commands.list", "overview",       "incidents.update"};
-    require(role == "admin" || readMethods.contains(method), "Administrator role required");
+                                  "commands.list", "overview",       "incidents.update", "radar.flows", "radar.top"};
+    require(role == "admin" || (role == "analyst" && readMethods.contains(method)), "Operator role required");
     if (method == "session")
         return {{"name", operators[0]["name"].toString()}, {"role", role}, {"identity", id}};
     if (method == "overview")
@@ -187,6 +264,23 @@ QJsonObject Repository::dispatch(const QString &id, const QString &method, const
                  .toInt()}};
     const int offset = qBound(0, p["offset"].toInt(), 10000000);
     const int limit = qBound(1, p["limit"].toInt(50), 100);
+    if (method == "radar.flows") {
+        const auto search = "%" + p["search"].toString().left(128) + "%";
+        auto rows = store_.rows("SELECT * FROM radar_flows WHERE source LIKE ? OR destination LIKE ? "
+                               "ORDER BY seen DESC,id DESC LIMIT ? OFFSET ?", {search, search, limit, offset});
+        const auto since = QDateTime::currentDateTimeUtc().addSecs(-90).toString(Qt::ISODateWithMs);
+        for (auto &row : rows) {
+            const auto candidates = store_.rows("SELECT d.hostname FROM fleet_device_addresses a JOIN fleet_devices d ON d.identity=a.identity "
+                                                "WHERE a.address=? AND d.revoked=0 AND d.last_seen>? LIMIT 2", {row["source"], since});
+            // Correlation hint only: a signed agent report is not proof of packet origin.
+            row["reported_device"] = candidates.size() == 1 ? candidates[0]["hostname"].toString() : QString();
+        }
+        return {{"rows", records(rows)}};
+    }
+    if (method == "radar.top")
+        return {{"rows", records(store_.rows("SELECT source,SUM(bytes) AS bytes,SUM(packets) AS packets,COUNT(*) AS flows "
+                                            "FROM radar_flows WHERE seen>? GROUP BY source ORDER BY SUM(bytes) DESC LIMIT 20",
+                                            {QDateTime::currentDateTimeUtc().addSecs(-300).toString(Qt::ISODateWithMs)}))}};
     if (method == "devices.list")
         return {{"rows", records(store_.rows(
                              "SELECT * FROM fleet_devices ORDER BY hostname,identity LIMIT ? OFFSET ?",

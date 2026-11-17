@@ -1,4 +1,5 @@
 #include "visuals.h"
+#include <QCoreApplication>
 #include <QLocale>
 #include <QPainter>
 #include <QPainterPath>
@@ -9,13 +10,15 @@ namespace siem {
 GaugeWidget::GaugeWidget(QWidget *parent) : QWidget(parent) {
     setMinimumSize(150, 136);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setAccessibleName("Доля событий высокого и критического приоритета");
+    setAccessibleName(
+        QCoreApplication::translate("Visuals", "Доля событий высокого и критического приоритета"));
 }
 void GaugeWidget::setValues(qint64 total, qint64 high) {
     total_ = qMax(qint64(0), total);
     high_ = qBound(qint64(0), high, total_);
-    setToolTip(QString("Высокий и критический приоритет: %1 из %2 событий")
-                   .arg(QLocale().toString(high_), QLocale().toString(total_)));
+    setToolTip(
+        QString(QCoreApplication::translate("Visuals", "Высокий и критический приоритет: %1 из %2 событий"))
+            .arg(QLocale().toString(high_), QLocale().toString(total_)));
     update();
 }
 void GaugeWidget::setTheme(bool lavender) {
@@ -39,8 +42,7 @@ void GaugeWidget::paintEvent(QPaintEvent *) {
     const QRectF arc(center.x() - radius, center.y() - radius, radius * 2, radius * 2);
     const auto ratio = total_ ? double(high_) / double(total_) : 0.0;
     const QColor accent(night_ ? "#c1a0ed" : lavender_ ? "#aa96d6" : "#ef8b58");
-    p.setPen(QPen(QColor(night_ ? "#343c50" : "#f1eff3"), thickness,
-                  Qt::SolidLine, Qt::FlatCap));
+    p.setPen(QPen(QColor(night_ ? "#343c50" : "#f1eff3"), thickness, Qt::SolidLine, Qt::FlatCap));
     p.drawArc(arc, 0, 180 * 16);
     if (ratio > 0) {
         QLinearGradient fill(arc.topLeft(), arc.topRight());
@@ -69,17 +71,22 @@ void GaugeWidget::paintEvent(QPaintEvent *) {
     p.setFont(font);
     p.setPen(QColor(night_ ? "#acb8ce" : "#99939e"));
     p.drawText(QRectF(0, center.y() + 10, width(), 20), Qt::AlignCenter,
-               total_ ? "высокий приоритет" : "пока нет событий");
+               total_ ? QCoreApplication::translate("Visuals", "высокий приоритет")
+                      : QCoreApplication::translate("Visuals", "пока нет событий"));
 }
 NetworkMapWidget::NetworkMapWidget(QWidget *parent) : QWidget(parent) {
     setMinimumSize(130, 120);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setAccessibleName("Узлы в инвентаризации");
+    setAccessibleName(QCoreApplication::translate("Visuals", "Узлы в инвентаризации"));
 }
 void NetworkMapWidget::setNodeCount(int count) {
     count_ = qMax(0, count);
-    setAccessibleDescription(QString("Учтено узлов: %1. Схематическая иллюстрация сети.").arg(count_));
-    setToolTip(QString("В инвентаризации: %1 узлов. Схематическая иллюстрация сети.").arg(count_));
+    setAccessibleDescription(
+        QString(QCoreApplication::translate("Visuals", "Учтено узлов: %1. Схематическая иллюстрация сети."))
+            .arg(count_));
+    setToolTip(QString(QCoreApplication::translate(
+                           "Visuals", "В инвентаризации: %1 узлов. Схематическая иллюстрация сети."))
+                   .arg(count_));
     update();
 }
 void NetworkMapWidget::setTheme(bool lavender) {
@@ -128,8 +135,7 @@ void NetworkMapWidget::paintEvent(QPaintEvent *) {
     p.drawEllipse(hub, 28, 28);
     p.setBrush(accent);
     p.drawEllipse(hub, 18, 18);
-    p.setPen(QPen(QColor(night_ ? "#281e3c" : "#ffffff"), 1.4,
-                  Qt::SolidLine, Qt::RoundCap));
+    p.setPen(QPen(QColor(night_ ? "#281e3c" : "#ffffff"), 1.4, Qt::SolidLine, Qt::RoundCap));
     const QRectF chip(hub.x() - 6, hub.y() - 7, 12, 14);
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(chip, 2, 2);

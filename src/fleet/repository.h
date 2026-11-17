@@ -7,6 +7,9 @@ class Repository final {
     explicit Repository(Store &store);
     void addOperator(const QString &fingerprint, const QString &name, const QString &role);
     QJsonObject dispatch(const QString &identity, const QString &method, const QJsonObject &params);
+    QJsonObject monitoringSnapshot() const;
+    void ingestRadar(const QJsonArray &flows, const QJsonArray &alerts);
+    void retainRadar();
 
   private:
     Store &store_;
@@ -14,6 +17,5 @@ class Repository final {
     QJsonObject enroll(const QString &identity, const QJsonObject &params);
     QJsonObject poll(const QString &identity, const QJsonObject &params);
     QJsonObject policy(const QString &group) const;
-    QString ownHostname(const QString &identity) const;
 };
 } // namespace siem::fleet

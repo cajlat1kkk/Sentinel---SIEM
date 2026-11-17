@@ -1,11 +1,15 @@
 param(
     [Parameter(Mandatory=$true)][ValidateSet('agent','server')][string]$Role,
     [Parameter(Mandatory=$true)][string]$ConfigPath,
-    [string]$BinaryDirectory = "$env:ProgramFiles\Sentinel SIEM\bin"
+    [string]$BinaryDirectory = "$env:ProgramFiles\Sentinel SIEM\bin",
+    [string]$OperatorCertificate,
+    [string]$OperatorName = 'Administrator',
+    [ValidateSet('admin','analyst')][string]$OperatorRole = 'admin'
 )
 $ErrorActionPreference = 'Stop'
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run from an elevated PowerShell after installing the machine-wide EXE package.' }
+if ($OperatorCertificate -and $Role -ne 'server') { throw '-OperatorCertificate is valid only for the server role.' }
 $binary = Join-Path $BinaryDirectory "siem-$Role.exe"
 if (-not (Test-Path $binary)) { throw "Missing installed binary: $binary" }
 $resolved = (Resolve-Path $binary).Path
@@ -38,6 +42,13 @@ $candidate = Join-Path $identityDir "$Role.json"
 $config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $candidate -Encoding utf8
 & $binary --config $candidate --check-config
 if ($LASTEXITCODE -ne 0) { throw 'Configuration validation failed; existing service was not changed' }
+if ($OperatorCertificate) {
+    $bootstrapCertificate = Join-Path $identityDir 'operator-bootstrap.crt'
+    Copy-Item -LiteralPath (Resolve-Path $OperatorCertificate).Path -Destination $bootstrapCertificate
+    & $binary --config $candidate --add-operator $bootstrapCertificate --name $OperatorName --role $OperatorRole
+    if ($LASTEXITCODE -ne 0) { throw 'Operator provisioning failed; existing service was not changed' }
+    Remove-Item -LiteralPath $bootstrapCertificate -Force
+}
 $command = '"{0}" --service --config "{1}"' -f $resolved,$candidate
 $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($existing) {

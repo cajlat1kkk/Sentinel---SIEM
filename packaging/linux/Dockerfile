@@ -9,7 +9,7 @@ RUN if [ -n "$DEBIAN_MIRROR" ] && [ -f /etc/apt/sources.list.d/debian.sources ];
        -o APT::Update::Error-Mode=any update \
     && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
        install -y --no-install-recommends \
-    build-essential cmake ninja-build pkg-config qt6-base-dev qt6-svg-dev \
+    build-essential cmake ninja-build pkg-config qt6-base-dev qt6-svg-dev qt6-l10n-tools \
     libqt6sql6-psql libqt6sql6-sqlite libdpdk-dev dpkg-dev nftables python3 libssl-dev openssl postgresql libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 RUN apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
@@ -27,5 +27,5 @@ RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREF
     && pcap_package=$(dpkg-query -W -f='${Package}' 'librte-net-pcap*') \
     && test -n "$pcap_package" \
     && cd build && cpack -G DEB \
-       -D "CPACK_DEBIAN_PACKAGE_DEPENDS=libqt6sql6-psql, libqt6sql6-sqlite, libqt6svg6, $pcap_package"
+       -D "CPACK_DEBIAN_PACKAGE_DEPENDS=libqt6sql6-psql, libqt6sql6-sqlite, libqt6svg6, python3, $pcap_package"
 CMD ["/work/build/sentinel-siem", "--demo", "--smoke-test"]

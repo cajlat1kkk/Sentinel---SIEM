@@ -6,6 +6,7 @@
 #include <QHostInfo>
 #include <QJsonDocument>
 #include <QNetworkDatagram>
+#include <QNetworkInterface>
 #include <QStandardPaths>
 #include <QStorageInfo>
 #include <QSysInfo>
@@ -147,6 +148,13 @@ void Agent::start() {
 QJsonObject Agent::health() const {
     auto h = policy_.health();
     h["version"] = QCoreApplication::applicationVersion();
+    QJsonArray addresses;
+    for (const auto &address : QNetworkInterface::allAddresses()) {
+        if (addresses.size() >= 32) break;
+        if (!address.isLoopback() && !address.isNull() && !address.isMulticast() && !address.isLinkLocal())
+            addresses.append(address.toString());
+    }
+    h["addresses"] = addresses;
     h["os"] = QSysInfo::prettyProductName();
     h["queue_events"] = queue_.count();
     h["queue_bytes"] = double(queue_.bytes());
